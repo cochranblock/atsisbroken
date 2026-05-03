@@ -24,11 +24,13 @@ $ cargo check
 
 | Sim | SHA-256 |
 |---|---|
-| 1 | `a05a097cd9e7497bd999f6d1a625ce2e887b9505b6105b22e40bfba1f8dbe9b6` |
-| 2 | `a05a097cd9e7497bd999f6d1a625ce2e887b9505b6105b22e40bfba1f8dbe9b6` |
-| 3 | `a05a097cd9e7497bd999f6d1a625ce2e887b9505b6105b22e40bfba1f8dbe9b6` |
+| 1 | `5661f393e2bd730eb80cce11066ac0d483605ca29c6743786295a1f628ae07e8` |
+| 2 | `5661f393e2bd730eb80cce11066ac0d483605ca29c6743786295a1f628ae07e8` |
+| 3 | `5661f393e2bd730eb80cce11066ac0d483605ca29c6743786295a1f628ae07e8` |
 
-12/12 tests pass on every sim (10 atsisbroken + 2 atsisbroken-android). Reproduce:
+40/40 tests pass on every sim (33 atsisbroken + 7 atsisbroken-android).
+Tautological tests removed; remaining suite is behavioral or schema-
+stability checks. Reproduce:
 ```sh
 for i in 1 2 3; do
   cargo test --quiet 2>&1 | grep -E "^test |result:" | sort | sha256sum

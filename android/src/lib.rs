@@ -87,4 +87,39 @@ mod tests {
         let out = classify_json(f).unwrap();
         assert!(out.contains("unknown"));
     }
+
+    #[test]
+    fn status_json_carries_version_string() {
+        let v: serde_json::Value = serde_json::from_str(&status_json()).unwrap();
+        assert_eq!(v["version"].as_str().unwrap(), atsisbroken::version());
+    }
+
+    #[test]
+    fn status_json_default_mode_is_training_wheels() {
+        let v: serde_json::Value = serde_json::from_str(&status_json()).unwrap();
+        assert_eq!(v["default_mode"].as_str().unwrap(), "training_wheels");
+    }
+
+    #[test]
+    fn status_json_fingerprint_matches_core() {
+        let v: serde_json::Value = serde_json::from_str(&status_json()).unwrap();
+        assert_eq!(
+            v["seed_corpus_fingerprint"].as_u64().unwrap() as u32,
+            atsisbroken::seed_corpus_fingerprint()
+        );
+    }
+
+    #[test]
+    fn classify_malformed_json_errors() {
+        let out = classify_json("{not json");
+        assert!(out.is_err());
+    }
+
+    #[test]
+    fn classify_returns_well_formed_json() {
+        let f = r#"{"label":"Email","placeholder":"","aria_label":"","name":"email","id":"","kind":"email"}"#;
+        let out = classify_json(f).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert!(v["key"].is_string());
+    }
 }
