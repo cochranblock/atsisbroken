@@ -116,4 +116,48 @@ mod tests {
             Some("config.toml")
         );
     }
+
+    #[test]
+    fn dotted_dirname_is_atsisbroken() {
+        // The leading-dot convention means it doesn't pollute `ls`.
+        // If anyone "fixes" this to ~/atsisbroken/, the user's home
+        // dir gets noisy and we lose the "config dir" mental category.
+        assert_eq!(
+            atsisbroken_dir().file_name().and_then(|s| s.to_str()),
+            Some(".atsisbroken")
+        );
+    }
+
+    #[test]
+    fn ensure_dir_is_idempotent() {
+        // Calling ensure_dir twice must succeed both times — once to
+        // create, once to confirm it already exists. We do this in the
+        // real ~/.atsisbroken/ since touching env vars in tests races
+        // with parallel test threads on Rust 2024.
+        let d1 = ensure_dir().unwrap();
+        let d2 = ensure_dir().unwrap();
+        assert_eq!(d1, d2);
+        assert!(d1.exists());
+    }
+
+    #[test]
+    fn native_host_dir_when_set_is_absolute() {
+        if let Some(d) = chrome_native_host_dir() {
+            assert!(
+                d.is_absolute(),
+                "native host dir must be absolute: {}",
+                d.display()
+            );
+        }
+    }
+
+    #[test]
+    fn native_host_dir_ends_with_native_messaging_hosts() {
+        if let Some(d) = chrome_native_host_dir() {
+            assert_eq!(
+                d.file_name().and_then(|s| s.to_str()),
+                Some("NativeMessagingHosts")
+            );
+        }
+    }
 }

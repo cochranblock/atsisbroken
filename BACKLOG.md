@@ -65,5 +65,14 @@ as they ship. Order under each section reflects priority.
 - [x] PLAN.md — engineering + distribution + interested-parties (`b0c7120`).
 - [x] PLAN Phase 1 #1: persist FeedbackQueue to ~/.atsisbroken/feedback.jsonl (this commit).
 - [x] PLAN Phase 1 #2: `install-bridge` writes per-OS Native Messaging manifest (this commit).
-- [x] PLAN Phase 1 #3: `init` parses resume text → Profile, writes profile.toml (this commit).
-- [x] `status` first-run detection + feedback queue depth (this commit).
+- [x] PLAN Phase 1 #3: `init` parses resume text → Profile, writes profile.toml (`9ebd1ad`).
+- [x] `status` first-run detection + feedback queue depth (`9ebd1ad`).
+- [x] PLAN Phase 1 #4: strategy ladder + CDP attach proof-of-life
+      (CDP-attach → CDP-launch → extension → userscript → bookmarklet
+      → clipboard → speak; `run` auto-picks; per-strategy subcommands).
+- [x] Coverage push to 156 tests (was 77): JSON-shape pinning for every
+      bridge variant + Experience + Education; resume parser fed 13
+      diverse inputs; userscript brace/paren/metadata + don't-clobber
+      checks; bookmarklet single-line / no-unencoded-quotes-or-hash;
+      parse_mode + parse_strategy_override branch coverage; 9-test
+      integration suite running the actual binary.

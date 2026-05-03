@@ -25,8 +25,10 @@
 use serde::{Deserialize, Serialize};
 
 pub mod bridge;
+pub mod cdp;
 pub mod paths;
 pub mod resume;
+pub mod strategy;
 
 /// Seed corpus of generic ATS field → key pairs. Compiled into the binary.
 /// Bootstrap signal for users who have not yet built up their own labelled
@@ -109,6 +111,19 @@ pub enum Mode {
 impl Default for Mode {
     fn default() -> Self {
         Mode::TrainingWheels
+    }
+}
+
+impl Mode {
+    /// Accept the human-typed CLI spellings. Kept in lib.rs so the
+    /// vocabulary is unit-testable without spinning up clap.
+    pub fn from_cli_str(s: &str) -> Option<Mode> {
+        match s {
+            "training-wheels" | "training_wheels" | "training" => Some(Mode::TrainingWheels),
+            "shadow" => Some(Mode::Shadow),
+            "chaos" => Some(Mode::Chaos),
+            _ => None,
+        }
     }
 }
 
@@ -468,6 +483,70 @@ mod tests {
         assert!(pairs.iter().any(|p| p.expected == "unknown"));
     }
     #[test]
+    fn seed_corpus_has_no_duplicate_descriptors() {
+        // Duplicate (label, placeholder, aria, name, id) tuples bias the
+        // model's prior toward whatever key the duplicate happens to
+        // declare. Catch it at corpus-edit time.
+        use std::collections::HashSet;
+        let pairs = parse_seed_corpus().unwrap();
+        let mut seen: HashSet<String> = HashSet::new();
+        for p in &pairs {
+            let key = format!(
+                "{}|{}|{}|{}|{}",
+                p.field.label, p.field.placeholder, p.field.aria_label, p.field.name, p.field.id
+            );
+            assert!(
+                seen.insert(key.clone()),
+                "duplicate descriptor in seed corpus: {key}"
+            );
+        }
+    }
+
+    #[test]
+    fn seed_corpus_jsonl_has_no_trailing_or_leading_whitespace_per_line() {
+        // JSONL parsers tolerate it but human reviewers don't catch it
+        // visually — nail the format.
+        for line in SEED_CORPUS_JSONL.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            assert_eq!(
+                line,
+                line.trim(),
+                "seed corpus line has whitespace edges: {line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_seed_corpus_propagates_malformed_line_error() {
+        // If a seed corpus row ever drifts to invalid JSON, the loader
+        // must return Err — silently dropping rows poisons training.
+        let original = SEED_CORPUS_JSONL;
+        let injected = format!("{original}\n{{this is not json}}\n");
+        let result: Result<Vec<TrainingPair>, _> = injected
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(serde_json::from_str)
+            .collect();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn seed_corpus_covers_at_least_two_kinds() {
+        // Quick sanity: corpus exercises more than one HTML input kind.
+        let pairs = parse_seed_corpus().unwrap();
+        let mut kinds: std::collections::HashSet<String> = Default::default();
+        for p in &pairs {
+            kinds.insert(p.field.kind.clone());
+        }
+        assert!(
+            kinds.len() >= 2,
+            "seed corpus is too monocultural in `kind`: {kinds:?}"
+        );
+    }
+
+    #[test]
     fn seed_corpus_no_empty_label_and_name() {
         // Every pair needs at least one signal — pure-empty descriptors are
         // useless training data and indicate a corpus authoring bug.
@@ -536,6 +615,21 @@ mod tests {
         assert_eq!(got, want);
     }
 
+    /// Experience is the deepest nested struct in Profile — pin it.
+    #[test]
+    fn experience_json_shape_is_stable() {
+        let e = Experience {
+            company: "Acme Co".into(),
+            title: "Engineer III".into(),
+            start: "2020-01".into(),
+            end: "2024-06".into(),
+            bullets: vec!["shipped X".into(), "led Y".into()],
+        };
+        let got = serde_json::to_string(&e).unwrap();
+        let want = r#"{"company":"Acme Co","title":"Engineer III","start":"2020-01","end":"2024-06","bullets":["shipped X","led Y"]}"#;
+        assert_eq!(got, want);
+    }
+
     /// Pin Education's on-disk shape including the Option<gpa> serialization
     /// (must be `null` when None — not omitted — so file diffs are stable).
     #[test]
@@ -587,6 +681,26 @@ mod tests {
         assert_eq!(s, "\"shadow\"");
         let s = serde_json::to_string(&Mode::Chaos).unwrap();
         assert_eq!(s, "\"chaos\"");
+    }
+
+    #[test]
+    fn mode_from_cli_str_accepts_all_documented_spellings() {
+        // Every spelling that ships in --help has to keep working;
+        // accidentally renaming one breaks every script in the wild.
+        assert_eq!(Mode::from_cli_str("training-wheels"), Some(Mode::TrainingWheels));
+        assert_eq!(Mode::from_cli_str("training_wheels"), Some(Mode::TrainingWheels));
+        assert_eq!(Mode::from_cli_str("training"), Some(Mode::TrainingWheels));
+        assert_eq!(Mode::from_cli_str("shadow"), Some(Mode::Shadow));
+        assert_eq!(Mode::from_cli_str("chaos"), Some(Mode::Chaos));
+    }
+
+    #[test]
+    fn mode_from_cli_str_rejects_unknown_and_typos() {
+        assert_eq!(Mode::from_cli_str(""), None);
+        assert_eq!(Mode::from_cli_str("Chaos"), None); // case-sensitive
+        assert_eq!(Mode::from_cli_str("training wheels"), None); // space, not dash
+        assert_eq!(Mode::from_cli_str("shadows"), None);
+        assert_eq!(Mode::from_cli_str("yolo"), None);
     }
 
     #[test]
@@ -737,6 +851,50 @@ mod tests {
         q.save_to(&path).unwrap();
         let back = FeedbackQueue::load_from(&path).unwrap();
         assert_eq!(q, back);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn feedback_queue_preserves_event_order_across_save_load() {
+        // Order matters — Feedback events are a temporal stream. The
+        // online updater applies them in order; a shuffle inverts the
+        // training trajectory.
+        let dir = std::env::temp_dir().join(format!(
+            "atsisbroken_order_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("feedback.jsonl");
+        let mut q = FeedbackQueue::default();
+        q.append(sample_fb("first", "email", "email", true));
+        q.append(sample_fb("second", "phone", "phone", true));
+        q.append(sample_fb("third", "freetext", "skip", false));
+        q.save_to(&path).unwrap();
+        let back = FeedbackQueue::load_from(&path).unwrap();
+        assert_eq!(back.events[0].field.label, "first");
+        assert_eq!(back.events[1].field.label, "second");
+        assert_eq!(back.events[2].field.label, "third");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn feedback_queue_save_idempotent_overwrites_prior_content() {
+        // Saving twice must produce the second state, not append.
+        let dir = std::env::temp_dir().join(format!(
+            "atsisbroken_overwrite_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("feedback.jsonl");
+        let mut q = FeedbackQueue::default();
+        q.append(sample_fb("one", "email", "email", true));
+        q.save_to(&path).unwrap();
+        let mut q2 = FeedbackQueue::default();
+        q2.append(sample_fb("two", "phone", "phone", true));
+        q2.save_to(&path).unwrap();
+        let back = FeedbackQueue::load_from(&path).unwrap();
+        assert_eq!(back.len(), 1);
+        assert_eq!(back.events[0].field.label, "two");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

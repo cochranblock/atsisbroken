@@ -24,11 +24,17 @@ $ cargo check
 
 | Sim | SHA-256 |
 |---|---|
-| 1 | `df892f66c37bdebda6255a80feeaacf8a700cd7fe38e3a319ef5d55ce6e20cf0` |
-| 2 | `df892f66c37bdebda6255a80feeaacf8a700cd7fe38e3a319ef5d55ce6e20cf0` |
-| 3 | `df892f66c37bdebda6255a80feeaacf8a700cd7fe38e3a319ef5d55ce6e20cf0` |
+| 1 | `67747352a6cf9f9d3d115768c0d9ccbf05487a8db6520820eb7244047ea326a0` |
+| 2 | `67747352a6cf9f9d3d115768c0d9ccbf05487a8db6520820eb7244047ea326a0` |
+| 3 | `67747352a6cf9f9d3d115768c0d9ccbf05487a8db6520820eb7244047ea326a0` |
 
-66/66 tests pass on every sim (59 atsisbroken + 7 atsisbroken-android).
+156/156 tests pass on every sim:
+- 129 in `atsisbroken` lib (schemas, queue, bridge, paths, resume, strategy, cdp)
+- 11 in `atsisbroken` bin (parse_mode, parse_strategy_override, clipboard wiring)
+-  9 in `tests/cli_smoke.rs` integration (binary `--help`, `--version`,
+   `init` ↔ `status`, `speak`, `bookmarklet`, `run` without init,
+   `copy` unknown key, `cdp-probe` no Chrome)
+-  7 in `atsisbroken-android` lib (JNI surface JSON shapes)
 Tautological tests removed; remaining suite is behavioral or schema-
 stability checks. Reproduce:
 ```sh

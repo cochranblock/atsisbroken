@@ -274,4 +274,182 @@ mod tests {
         let json = serde_json::to_string(&BridgeMessage::Ack { accepted: 7 }).unwrap();
         assert_eq!(json, r#"{"kind":"ack","accepted":7}"#);
     }
+
+    #[test]
+    fn hello_wire_shape_is_stable() {
+        let json = serde_json::to_string(&BridgeMessage::Hello {
+            extension_version: "0.0.0".into(),
+        })
+        .unwrap();
+        assert_eq!(json, r#"{"kind":"hello","extension_version":"0.0.0"}"#);
+    }
+
+    #[test]
+    fn hello_ack_wire_shape_is_stable() {
+        let json = serde_json::to_string(&BridgeMessage::HelloAck {
+            host_version: "0.0.0".into(),
+            protocol_version: 1,
+        })
+        .unwrap();
+        assert_eq!(
+            json,
+            r#"{"kind":"hello_ack","host_version":"0.0.0","protocol_version":1}"#
+        );
+    }
+
+    #[test]
+    fn error_wire_shape_is_stable() {
+        let json = serde_json::to_string(&BridgeMessage::Error {
+            message: "boom".into(),
+        })
+        .unwrap();
+        assert_eq!(json, r#"{"kind":"error","message":"boom"}"#);
+    }
+
+    #[test]
+    fn push_observations_wire_shape_is_stable() {
+        let json = serde_json::to_string(&BridgeMessage::PushObservations {
+            events: vec![sample_obs()],
+        })
+        .unwrap();
+        // Lock the envelope. The Observation interior is independently
+        // pinned by lib.rs::observation_json_shape_is_stable.
+        assert!(json.starts_with(r#"{"kind":"push_observations","events":["#));
+        assert!(json.ends_with(r#"]}"#));
+    }
+
+    #[test]
+    fn push_feedback_wire_shape_is_stable() {
+        let json = serde_json::to_string(&BridgeMessage::PushFeedback {
+            events: vec![Feedback {
+                field: sample_obs().field,
+                predicted: "email".into(),
+                actual: "email".into(),
+                accepted: true,
+            }],
+        })
+        .unwrap();
+        assert!(json.starts_with(r#"{"kind":"push_feedback","events":["#));
+        assert!(json.ends_with(r#"]}"#));
+    }
+
+    #[test]
+    fn length_prefix_is_explicitly_little_endian() {
+        // Pin the byte-order contract — Chrome's Native Messaging spec
+        // says LE, and a vendor-side endianness flip would be silent.
+        let msg = BridgeMessage::Ack { accepted: 0x01020304 };
+        let frame = encode(&msg).unwrap();
+        let body_len = frame.len() - 4;
+        assert_eq!(frame[0], (body_len & 0xFF) as u8);
+        assert_eq!(frame[1], ((body_len >> 8) & 0xFF) as u8);
+        assert_eq!(frame[2], ((body_len >> 16) & 0xFF) as u8);
+        assert_eq!(frame[3], ((body_len >> 24) & 0xFF) as u8);
+    }
+
+    #[test]
+    fn truncated_payload_returns_io_error() {
+        // Length prefix says 100 bytes, only 4 follow. read_exact must err.
+        let mut bytes = (100u32).to_le_bytes().to_vec();
+        bytes.extend_from_slice(b"abcd");
+        let mut cursor = std::io::Cursor::new(bytes);
+        let err = read_one(&mut cursor).unwrap_err();
+        assert!(matches!(err, BridgeError::Io(_)));
+    }
+
+    #[test]
+    fn invalid_utf8_payload_errors() {
+        // Frame says payload is N bytes, payload is not valid JSON
+        // (also not valid UTF-8). Must surface as a serde error, not a
+        // panic.
+        let payload: &[u8] = &[0xFF, 0xFE, 0xFD];
+        let mut bytes = (payload.len() as u32).to_le_bytes().to_vec();
+        bytes.extend_from_slice(payload);
+        let mut cursor = std::io::Cursor::new(bytes);
+        let err = read_one(&mut cursor).unwrap_err();
+        assert!(matches!(err, BridgeError::Serde(_)));
+    }
+
+    #[test]
+    fn serve_loop_handles_observations_and_feedback_in_one_session() {
+        // Single Hello, then a mix of pushes — server must ack each in
+        // order and the feedback queue must reflect ONLY pushed feedback
+        // (observations don't currently land in the queue).
+        let mut input = Vec::new();
+        input.extend(
+            encode(&BridgeMessage::Hello {
+                extension_version: "0.0.0".into(),
+            })
+            .unwrap(),
+        );
+        input.extend(
+            encode(&BridgeMessage::PushObservations {
+                events: vec![sample_obs(), sample_obs(), sample_obs()],
+            })
+            .unwrap(),
+        );
+        input.extend(
+            encode(&BridgeMessage::PushFeedback {
+                events: vec![Feedback {
+                    field: sample_obs().field,
+                    predicted: "email".into(),
+                    actual: "email".into(),
+                    accepted: true,
+                }],
+            })
+            .unwrap(),
+        );
+        let mut output = Vec::new();
+        let mut queue = FeedbackQueue::default();
+        serve_native_messaging(std::io::Cursor::new(input), &mut output, &mut queue).unwrap();
+        // 3 frames out: HelloAck, Ack(3), Ack(1)
+        let mut cursor = std::io::Cursor::new(output);
+        let m1 = read_one(&mut cursor).unwrap().unwrap();
+        let m2 = read_one(&mut cursor).unwrap().unwrap();
+        let m3 = read_one(&mut cursor).unwrap().unwrap();
+        assert!(matches!(m1, BridgeMessage::HelloAck { .. }));
+        assert!(matches!(m2, BridgeMessage::Ack { accepted: 3 }));
+        assert!(matches!(m3, BridgeMessage::Ack { accepted: 1 }));
+        assert_eq!(queue.len(), 1);
+    }
+
+    #[test]
+    fn server_ignores_helloack_from_extension_without_breaking_session() {
+        // The extension shouldn't send HelloAck, but if it does (a bug
+        // in a future extension version), the server must not crash.
+        let mut input = Vec::new();
+        input.extend(
+            encode(&BridgeMessage::HelloAck {
+                host_version: "weird".into(),
+                protocol_version: 1,
+            })
+            .unwrap(),
+        );
+        // Then a real PushFeedback to confirm the loop kept running.
+        input.extend(
+            encode(&BridgeMessage::PushFeedback {
+                events: vec![Feedback {
+                    field: sample_obs().field,
+                    predicted: "email".into(),
+                    actual: "email".into(),
+                    accepted: true,
+                }],
+            })
+            .unwrap(),
+        );
+        let mut output = Vec::new();
+        let mut queue = FeedbackQueue::default();
+        serve_native_messaging(std::io::Cursor::new(input), &mut output, &mut queue).unwrap();
+        // No HelloAck back (extension's HelloAck is dropped); just an Ack(1).
+        let mut cursor = std::io::Cursor::new(output);
+        let m = read_one(&mut cursor).unwrap().unwrap();
+        assert!(matches!(m, BridgeMessage::Ack { accepted: 1 }));
+        assert_eq!(queue.len(), 1);
+    }
+
+    #[test]
+    fn max_message_bytes_matches_chrome_spec() {
+        // Chrome's spec: 1 MiB. Bumping this without coordinating with
+        // the extension side breaks framing.
+        assert_eq!(MAX_MESSAGE_BYTES, 1024 * 1024);
+    }
 }

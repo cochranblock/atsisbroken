@@ -264,4 +264,129 @@ Senior Software Engineer with 7 years experience.";
         let p = parse_resume("Jane Doe\nfoo@bar\n");
         assert!(p.email.is_empty());
     }
+
+    #[test]
+    fn email_with_plus_tag_is_preserved() {
+        let p = parse_resume("Jane Doe\njane+resumes@example.com\n");
+        assert_eq!(p.email, "jane+resumes@example.com");
+    }
+
+    #[test]
+    fn email_with_dot_in_local_part() {
+        let p = parse_resume("J. Doe\nfirst.last@sub.example.com\n");
+        assert_eq!(p.email, "first.last@sub.example.com");
+    }
+
+    #[test]
+    fn first_email_wins_when_multiple_present() {
+        let p = parse_resume("Jane Doe\nprimary@example.com\nbackup@example.org\n");
+        assert_eq!(p.email, "primary@example.com");
+    }
+
+    #[test]
+    fn phone_with_us_country_code_dot_format() {
+        let p = parse_resume("Jane Doe\nj@e.com\n+1.555.010.2030\n");
+        let digits: String = p.phone.chars().filter(|c| c.is_ascii_digit()).collect();
+        assert_eq!(digits, "15550102030");
+    }
+
+    #[test]
+    fn phone_dashes_only() {
+        let p = parse_resume("Jane Doe\nj@e.com\n555-010-2030\n");
+        let digits: String = p.phone.chars().filter(|c| c.is_ascii_digit()).collect();
+        assert_eq!(digits, "5550102030");
+    }
+
+    #[test]
+    fn phone_parens_only() {
+        let p = parse_resume("Jane Doe\nj@e.com\n(555) 010 2030\n");
+        let digits: String = p.phone.chars().filter(|c| c.is_ascii_digit()).collect();
+        assert_eq!(digits, "5550102030");
+    }
+
+    #[test]
+    fn linkedin_url_with_trailing_slash() {
+        let p = parse_resume("Jane Doe\nj@e.com\nhttps://linkedin.com/in/janedoe/\n");
+        assert!(p.linkedin.contains("linkedin.com/in/janedoe"));
+    }
+
+    #[test]
+    fn github_with_repo_path_is_still_classified_as_github() {
+        let p = parse_resume("Jane Doe\nj@e.com\ngithub.com/janedoe/atsisbroken\n");
+        assert!(p.github.contains("github.com/janedoe"));
+    }
+
+    #[test]
+    fn website_distinct_from_linkedin_and_github() {
+        let p = parse_resume(
+            "Jane Doe\nj@e.com\nlinkedin.com/in/janedoe\ngithub.com/janedoe\nportfolio.dev\n",
+        );
+        assert_eq!(p.website, "portfolio.dev");
+        // And critically: linkedin/github URLs must NOT have leaked into
+        // the website slot.
+        assert!(!p.website.contains("linkedin"));
+        assert!(!p.website.contains("github"));
+    }
+
+    #[test]
+    fn empty_resume_yields_empty_profile_no_panic() {
+        let p = parse_resume("");
+        assert!(p.full_name.is_empty());
+        assert!(p.email.is_empty());
+        assert!(p.phone.is_empty());
+        assert_eq!(p.raw_resume_text, "");
+    }
+
+    #[test]
+    fn whitespace_only_resume_yields_empty_profile() {
+        let p = parse_resume("\n\n   \n\t\n");
+        assert!(p.full_name.is_empty());
+        assert!(p.email.is_empty());
+    }
+
+    #[test]
+    fn name_skips_header_line_with_email() {
+        // First "line" is contact info; name is on a later line.
+        let p = parse_resume("jane@example.com | linkedin.com/in/janedoe\nJane Q. Doe\n");
+        assert_eq!(p.full_name, "Jane Q. Doe");
+    }
+
+    #[test]
+    fn single_word_name_is_rejected() {
+        // A line containing just "Jane" is too short to confidently be
+        // a full name. Better empty than wrong.
+        let p = parse_resume("Jane\njane@example.com\n");
+        assert_eq!(p.full_name, "");
+    }
+
+    #[test]
+    fn very_long_first_line_is_not_a_name() {
+        // Lines with too many words are a header / objective sentence.
+        let p = parse_resume(
+            "Senior Software Engineer with deep experience in distributed systems\nJane Doe\njane@example.com\n",
+        );
+        assert_eq!(p.full_name, "Jane Doe");
+    }
+
+    #[test]
+    fn url_excluded_from_name_detection() {
+        let p = parse_resume("https://janedoe.dev\nJane Doe\njane@example.com\n");
+        assert_eq!(p.full_name, "Jane Doe");
+    }
+
+    #[test]
+    fn raw_text_is_preserved_byte_for_byte() {
+        let weird = "Jane Doe\r\njane@e.com\r\n\nextra\n";
+        let p = parse_resume(weird);
+        assert_eq!(p.raw_resume_text, weird);
+    }
+
+    #[test]
+    fn parse_is_idempotent() {
+        // Parsing the same text twice produces equal Profiles. Pure fn
+        // contract — important because the parser will run repeatedly
+        // during init re-runs.
+        let s = "Jane Doe\njane@example.com\n+1-555-010-2030\n";
+        assert_eq!(parse_resume(s), parse_resume(s));
+    }
 }
