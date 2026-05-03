@@ -1,44 +1,75 @@
 # Unlicense — public domain — cochranblock.org
-# atsisbroken — ATS is broken. Browser-resident AI form-filling. Custom model by The Cochran Block, LLC. No open-source models. No cloud. No premium tier. Forever.
-# Stack: pixel-forge (model training pipeline) → custom field-deduction model (.safetensors) → kova-engine (inference + browser autopilot) → exopack TRIPLE SIMS gate.
+# atsisbroken — ATS is broken. Browser autopilot via CDP. Personal model built
+# on demand from the user's own inputs. No open-source models. No cloud. No
+# baked third-party weights. No premium tier. Forever.
+# Stack: seed corpus shipped in-tree → on-device trainer (logistic regression
+# over hand-engineered features) → ~/.atsisbroken/{profile.toml, model.json} →
+# kova-engine inference loader → chromiumoxide CDP → exopack TRIPLE SIMS gate.
+# Architecture: single Rust binary, cross-compiled. Diamond-edge keeps the
+# ship small. The user's model is the only model.
 # Contributors: GotEmCoach, KOVA, Claude Opus 4.7
 
 [workspace]
-resolver = "2"
-members = ["core", "cli"]
 
-[workspace.package]
+[package]
+name = "atsisbroken"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["Michael Cochran <mcochran@cochranblock.org>"]
+description = "ATS is broken. Browser autopilot that fills job applications using a model the user trains locally from their own resume. Single binary. No cloud. No accounts. Unlicense."
 license = "Unlicense"
-repository = "https://github.com/cochranblock/atsisbroken"
+repository = "https://github.com/cochranblock/cochranblock/atsisbroken"
 homepage = "https://simplify.cochranblock.org"
+readme = "README.md"
+keywords = ["ats", "job-application", "autofill", "resume", "local-first"]
+categories = ["command-line-utilities"]
+include = [
+    "src/**/*",
+    "assets/seed-corpus.jsonl",
+    "Cargo.toml",
+    "UNLICENSE",
+    "README.md",
+]
 
-[workspace.dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+[lib]
+name = "atsisbroken"
+path = "src/lib.rs"
+
+[[bin]]
+name = "atsisbroken"
+path = "src/main.rs"
+
+[dependencies]
 # The Cochran Block, LLC crates (paths; swap to crates.io or git when published).
-# kova-engine: inference only. No `browser`/`screenshot` — those are the kova-drives-Chrome
-# paradigm (Path A). atsisbroken is Path B: Chrome extension + WASM core, so the extension
-# IS the browser surface; we don't drive Chrome from outside.
-kova-engine = { path = "../kova", default-features = false, features = ["inference"] }
-pixel-forge = { path = "../pixel-forge" }
-# JS ↔ WASM bridge for the Chrome extension's content/background scripts.
-wasm-bindgen = "0.2"
-serde-wasm-bindgen = "0.6"
+# kova-engine: inference loader + tokenization. We do NOT use its bundled
+# model story — atsisbroken's models are user-trained, not author-shipped.
+kova-engine    = { path = "../kova", default-features = false, features = ["inference"] }
+# Chromium DevTools Protocol client. Pure Rust. No JS toolchain, no extension store.
+chromiumoxide  = { version = "0.7", default-features = false, features = ["tokio-runtime"] }
+# Async runtime for the CDP client + trainer + inference loop.
+tokio          = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+futures        = "0.3"
+# CLI + serde + errors.
+clap           = { version = "4", features = ["derive"] }
+serde          = { version = "1", features = ["derive"] }
+serde_json     = "1"
+toml           = "0.8"
+anyhow         = "1"
+thiserror      = "2"
 
 
 # ─── DIAMOND RUST BINARY ARCHITECTURE ───────────────────────────────
 # Canonical: https://cochranblock.org/diamond-profile.toml
-# Both profiles inherit release. One crystal, no fracture planes.
 #
-# Use SPEED-Diamond for the CLI (request-serving / daemon paths):
-#   cargo build --profile=diamond -p atsisbroken-cli
+# Speed-Diamond for the inference hot path on a developer machine:
+#   cargo build --profile=diamond
 #
-# Use SIZE-Diamond for the WASM core (every byte ships in the Chrome extension):
-#   cargo build --profile=diamond-edge -p atsisbroken-core --target wasm32-unknown-unknown
+# Size-Diamond for cross-compiled GitHub Releases artifacts:
+#   cargo build --profile=diamond-edge --target=x86_64-apple-darwin
+#   cargo build --profile=diamond-edge --target=aarch64-apple-darwin
+#   cargo build --profile=diamond-edge --target=x86_64-unknown-linux-gnu
+#   cargo build --profile=diamond-edge --target=x86_64-pc-windows-msvc
 
 [profile.diamond]
 inherits = "release"

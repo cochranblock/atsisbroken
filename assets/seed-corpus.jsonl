@@ -1,0 +1,26 @@
+{"field":{"label":"Email","placeholder":"","aria_label":"","name":"email","id":"email","kind":"email"},"expected":"email"}
+{"field":{"label":"Email address","placeholder":"you@example.com","aria_label":"","name":"email_address","id":"email_address","kind":"email"},"expected":"email"}
+{"field":{"label":"Contact email","placeholder":"","aria_label":"Email","name":"contactEmail","id":"","kind":"email"},"expected":"email"}
+{"field":{"label":"Phone","placeholder":"","aria_label":"","name":"phone","id":"phone","kind":"tel"},"expected":"phone"}
+{"field":{"label":"Mobile phone","placeholder":"","aria_label":"","name":"mobile","id":"mobile","kind":"tel"},"expected":"phone"}
+{"field":{"label":"","placeholder":"+1 (555) 555-1234","aria_label":"Phone number","name":"phoneNumber","id":"","kind":"tel"},"expected":"phone"}
+{"field":{"label":"First name","placeholder":"","aria_label":"","name":"first_name","id":"firstName","kind":"text"},"expected":"full_name"}
+{"field":{"label":"Last name","placeholder":"","aria_label":"","name":"last_name","id":"lastName","kind":"text"},"expected":"full_name"}
+{"field":{"label":"Full name","placeholder":"","aria_label":"","name":"name","id":"name","kind":"text"},"expected":"full_name"}
+{"field":{"label":"LinkedIn","placeholder":"linkedin.com/in/...","aria_label":"","name":"linkedin","id":"","kind":"url"},"expected":"linkedin"}
+{"field":{"label":"LinkedIn URL","placeholder":"","aria_label":"","name":"linkedin_url","id":"","kind":"url"},"expected":"linkedin"}
+{"field":{"label":"GitHub","placeholder":"github.com/...","aria_label":"","name":"github","id":"","kind":"url"},"expected":"github"}
+{"field":{"label":"GitHub URL","placeholder":"","aria_label":"","name":"github_url","id":"","kind":"url"},"expected":"github"}
+{"field":{"label":"Personal website","placeholder":"","aria_label":"","name":"website","id":"","kind":"url"},"expected":"website"}
+{"field":{"label":"Portfolio","placeholder":"","aria_label":"","name":"portfolio","id":"","kind":"url"},"expected":"website"}
+{"field":{"label":"Street address","placeholder":"","aria_label":"","name":"address1","id":"","kind":"text"},"expected":"address"}
+{"field":{"label":"Address line 1","placeholder":"","aria_label":"","name":"address_line_1","id":"","kind":"text"},"expected":"address"}
+{"field":{"label":"City","placeholder":"","aria_label":"","name":"city","id":"","kind":"text"},"expected":"address"}
+{"field":{"label":"Are you authorized to work in the US?","placeholder":"","aria_label":"","name":"work_auth","id":"","kind":"select"},"expected":"work_authorization"}
+{"field":{"label":"Will you require visa sponsorship?","placeholder":"","aria_label":"","name":"sponsorship","id":"","kind":"select"},"expected":"work_authorization"}
+{"field":{"label":"Years of relevant experience","placeholder":"","aria_label":"","name":"yrs_exp","id":"","kind":"number"},"expected":"years_experience"}
+{"field":{"label":"How many years of experience do you have?","placeholder":"","aria_label":"","name":"experience_years","id":"","kind":"number"},"expected":"years_experience"}
+{"field":{"label":"Why do you want this role?","placeholder":"","aria_label":"","name":"why_role","id":"","kind":"textarea"},"expected":"freetext"}
+{"field":{"label":"Tell us about yourself","placeholder":"","aria_label":"","name":"about","id":"","kind":"textarea"},"expected":"freetext"}
+{"field":{"label":"Salary expectation","placeholder":"","aria_label":"","name":"salary","id":"","kind":"number"},"expected":"unknown"}
+{"field":{"label":"How did you hear about us?","placeholder":"","aria_label":"","name":"source","id":"","kind":"select"},"expected":"unknown"}

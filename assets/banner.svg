@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" role="img" aria-label="atsisbroken — ATS is broken">
+  <defs>
+    <radialGradient id="glow" cx="80%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#ffb300" stop-opacity="0.10"/>
+      <stop offset="60%" stop-color="#ffb300" stop-opacity="0.02"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bgg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0a0a0a"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffb300" stop-opacity="0"/>
+      <stop offset="20%" stop-color="#ffb300"/>
+      <stop offset="80%" stop-color="#00d9ff"/>
+      <stop offset="100%" stop-color="#00d9ff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- background -->
+  <rect width="1280" height="320" fill="url(#bgg)"/>
+  <rect width="1280" height="320" fill="url(#glow)"/>
+
+  <!-- corner crosshair (subtle grid feel) -->
+  <g stroke="#1a1a1a" stroke-width="1" fill="none">
+    <line x1="40" y1="40" x2="80" y2="40"/>
+    <line x1="40" y1="40" x2="40" y2="80"/>
+    <line x1="1240" y1="40" x2="1200" y2="40"/>
+    <line x1="1240" y1="40" x2="1240" y2="80"/>
+    <line x1="40" y1="280" x2="80" y2="280"/>
+    <line x1="40" y1="280" x2="40" y2="240"/>
+    <line x1="1240" y1="280" x2="1200" y2="280"/>
+    <line x1="1240" y1="280" x2="1240" y2="240"/>
+  </g>
+
+  <!-- pretag bar -->
+  <text x="80" y="78" font-family="ui-monospace, 'SF Mono', 'Fira Code', monospace" font-size="12" letter-spacing="6" fill="#ffb300">THE COCHRAN BLOCK · ANTI-FOUNDER · UNLICENSE</text>
+
+  <!-- diamond mark -->
+  <g transform="translate(80, 130)">
+    <path d="M28 0 L56 28 L28 56 L0 28 Z" fill="none" stroke="#00d9ff" stroke-width="2"/>
+    <circle cx="28" cy="28" r="3" fill="#00d9ff"/>
+  </g>
+
+  <!-- project name -->
+  <text x="160" y="190" font-family="ui-monospace, 'SF Mono', 'Fira Code', monospace" font-size="76" font-weight="700" fill="#ffb300" letter-spacing="-0.02em">atsisbroken</text>
+
+  <!-- accent line -->
+  <rect x="80" y="220" width="700" height="1" fill="url(#line)"/>
+
+  <!-- tagline: red strike + amber tail -->
+  <text x="80" y="260" font-family="ui-monospace, 'SF Mono', 'Fira Code', monospace" font-size="22" fill="#f5f5f5">
+    <tspan fill="#ef5350" text-decoration="line-through">simplify.us</tspan>
+    <tspan fill="#777"> &#x2192; </tspan>
+    <tspan fill="#00d9ff">free, open, local-first.</tspan>
+    <tspan fill="#777"> </tspan>
+    <tspan fill="#ffb300">forever.</tspan>
+  </text>
+
+  <!-- right-side meta block -->
+  <g font-family="ui-monospace, 'SF Mono', 'Fira Code', monospace" font-size="13" fill="#777">
+    <text x="1240" y="125" text-anchor="end">LICENSE</text>
+    <text x="1240" y="143" text-anchor="end" fill="#ffb300">UNLICENSE</text>
+
+    <text x="1240" y="173" text-anchor="end">STACK</text>
+    <text x="1240" y="191" text-anchor="end" fill="#00d9ff">RUST · WASM · MV3</text>
+
+    <text x="1240" y="221" text-anchor="end">MODEL</text>
+    <text x="1240" y="239" text-anchor="end" fill="#00d9ff">CUSTOM · NO OPEN MODELS</text>
+
+    <text x="1240" y="269" text-anchor="end">PROFILE</text>
+    <text x="1240" y="287" text-anchor="end" fill="#ffb300">DIAMOND-EDGE</text>
+  </g>
+
+  <!-- pulse dot (status indicator) -->
+  <g transform="translate(80, 290)">
+    <circle r="4" fill="#ffb300">
+      <animate attributeName="opacity" values="1;0.25;1" dur="1.6s" repeatCount="indefinite"/>
+    </circle>
+    <text x="14" y="4" font-family="ui-monospace, 'SF Mono', 'Fira Code', monospace" font-size="11" letter-spacing="3" fill="#777">PRE-ALPHA · BUILDING IN PUBLIC</text>
+  </g>
+</svg>
