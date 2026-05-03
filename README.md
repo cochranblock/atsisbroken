@@ -15,6 +15,8 @@ By **The Cochran Block, LLC**. Public domain — `Unlicense`. Forever.
   still trains.
 
 ```
+$ atsisbroken                       # default: launch the TUI
+$ atsisbroken tui                   # same, explicit
 $ atsisbroken init                  # paste resume → Profile + seed model
 $ atsisbroken status                # current config / first-run hint
 $ atsisbroken run                   # auto-pick best fill strategy for env
@@ -25,6 +27,11 @@ $ atsisbroken bridge                # Chrome Native Messaging host loop
 $ atsisbroken install-bridge --extension-id ID
                                     # write Chrome Native Messaging manifest
 ```
+
+The TUI is the primary interface — running with no subcommand opens a
+three-tab terminal app (dashboard / queue / strategy) modeled on the
+Claude Code aesthetic. Subcommands are for scripting and one-shot
+tasks.
 
 When CDP isn't available, `run` falls through a strategy ladder so the
 product is usable in every environment:

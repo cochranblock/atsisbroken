@@ -24,17 +24,20 @@ $ cargo check
 
 | Sim | SHA-256 |
 |---|---|
-| 1 | `67747352a6cf9f9d3d115768c0d9ccbf05487a8db6520820eb7244047ea326a0` |
-| 2 | `67747352a6cf9f9d3d115768c0d9ccbf05487a8db6520820eb7244047ea326a0` |
-| 3 | `67747352a6cf9f9d3d115768c0d9ccbf05487a8db6520820eb7244047ea326a0` |
+| 1 | `13b5149b77370e17283e22e0c9d5cf2eb71b8024203d776d819c559fbe7a01cf` |
+| 2 | `13b5149b77370e17283e22e0c9d5cf2eb71b8024203d776d819c559fbe7a01cf` |
+| 3 | `13b5149b77370e17283e22e0c9d5cf2eb71b8024203d776d819c559fbe7a01cf` |
 
-156/156 tests pass on every sim:
-- 129 in `atsisbroken` lib (schemas, queue, bridge, paths, resume, strategy, cdp)
-- 11 in `atsisbroken` bin (parse_mode, parse_strategy_override, clipboard wiring)
--  9 in `tests/cli_smoke.rs` integration (binary `--help`, `--version`,
-   `init` ↔ `status`, `speak`, `bookmarklet`, `run` without init,
-   `copy` unknown key, `cdp-probe` no Chrome)
--  7 in `atsisbroken-android` lib (JNI surface JSON shapes)
+181/181 tests pass on every sim:
+- 154 in `atsisbroken` lib (schemas, queue, bridge, paths, resume,
+  strategy, cdp, **tui** — App state machine + key-action mapping +
+  HTML snapshot renderer)
+-  11 in `atsisbroken` bin (parse_mode, parse_strategy_override,
+  clipboard wiring)
+-   9 in `tests/cli_smoke.rs` integration (binary `--help`, `--version`,
+  `init` ↔ `status`, `speak`, `bookmarklet`, `run` without init,
+  `copy` unknown key, `cdp-probe` no Chrome)
+-   7 in `atsisbroken-android` lib (JNI surface JSON shapes)
 Tautological tests removed; remaining suite is behavioral or schema-
 stability checks. Reproduce:
 ```sh

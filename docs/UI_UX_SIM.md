@@ -1,53 +1,64 @@
 # atsisbroken — UI/UX Simulation
 
-Screenshots auto-captured via `scripts/capture-screenshots.sh` (headless
-Chromium → PNG). Source-of-truth: `docs/screenshots/*.png`.
+Auto-captured via `scripts/capture-screenshots.sh` (CLI output → styled
+HTML → headless Chromium → PNG, plus TUI output → ratatui `TestBackend`
+buffer → styled HTML → headless Chromium → PNG). Source-of-truth:
+`docs/screenshots/*.png`.
 
-## Captured surfaces
+## TUI surfaces (default interface)
+
+`atsisbroken` with no subcommand drops into the TUI. Three tabs.
+
+| # | Tab | Screenshot |
+|---|---|---|
+| 1 | dashboard | ![dashboard](screenshots/tui-1-dashboard.png) |
+| 2 | queue     | ![queue](screenshots/tui-2-queue.png) |
+| 3 | strategy  | ![strategy](screenshots/tui-3-strategy.png) |
+
+Aesthetic: minimal borders, mostly text, dim status footer with keybind
+hints. Modeled on Claude Code so anyone fluent in that tool's
+conventions feels at home immediately.
+
+## CLI surfaces (scripting / one-shot)
 
 | # | Subcommand | Screenshot |
 |---|---|---|
 | 01 | `atsisbroken --help` | ![help](screenshots/01-help.png) |
 | 02 | `atsisbroken status` | ![status](screenshots/02-status.png) |
-| 03 | `atsisbroken init` | ![init](screenshots/03-init.png) |
-| 04 | `atsisbroken run` | ![run](screenshots/04-run.png) |
-| 05 | `atsisbroken graduate` | ![graduate](screenshots/05-graduate.png) |
-| 06 | `atsisbroken sync` | ![sync](screenshots/06-sync.png) |
+| 03 | `atsisbroken userscript --help` | ![userscript](screenshots/03-userscript.png) |
+| 04 | `atsisbroken bookmarklet --help` | ![bookmarklet](screenshots/04-bookmarklet.png) |
+| 05 | `atsisbroken cdp-probe` | ![cdp-probe](screenshots/05-cdp-probe.png) |
+| 06 | `atsisbroken speak` | ![speak](screenshots/06-speak.png) |
 
-## Findings (as of this commit)
+## Findings
 
 ### Pass
-- Help (01) lists all subcommands with one-line descriptions. Subcommand
-  vocabulary maps cleanly to user mental model: init → run → graduate.
-- Stub commands (03–06) explicitly print `(not yet implemented)` —
-  no false-positive UX, no silent no-op confusion.
-- Status (02) shows the seed corpus fingerprint — gives the privacy-
-  hawk persona (P2) a one-line audit anchor.
+- TUI dashboard surfaces every populated profile field plus seed
+  corpus fingerprint and the auto-detected strategy in one screen.
+- Strategy tab makes the fall-through ladder legible at a glance.
+- Footer keybind hints (`1/2/3 tab  ←/→ nav  j/k scroll  m mode  q quit`)
+  match Claude Code conventions — vim-style + arrow + digit navigation.
+- Empty-profile case shows `not initialized — run \`atsisbroken init\``
+  in accent color rather than blank space.
+- `status` (CLI) reflects initialized/uninitialized + queue depth +
+  profile path, satisfying the first-run hint that the original UX
+  sim flagged.
 
 ### Fail
-- **Status doesn't detect first run.** P1 / P3 will run `status` first
-  and see only `default mode: TrainingWheels` with no hint that
-  `init` is the next step. Fix: status should check for
-  `~/.atsisbroken/profile.toml` and print `(not initialized — run
-  'atsisbroken init')` when missing.
-- **`graduate` lacks a confirmation prompt.** It's a one-way switch
-  from supervised → autonomous. P4 (career counselor) running it by
-  accident on a fresh profile is a footgun. Fix: prompt
-  `Are you sure? [y/N]` unless `--yes` is passed.
-- **`sync` says "(not yet implemented)" but should distinguish
-  three states once wired:** offline / no-destination-configured /
-  drained-N-events. Spec the messaging now.
-- **No color on output.** Help text could use one accent color for
-  subcommand names; status could use green/red for "ready/not-ready".
-  Low effort, big readability win.
-- **Status doesn't show feedback queue depth.** Once the queue exists,
-  it should appear in status: `feedback queue: 12 events pending`.
+- TUI **mode toggle is local-only** — pressing `m` cycles the
+  in-memory mode but doesn't persist to `~/.atsisbroken/config.toml`
+  yet. Visible-only, no effect on next run.
+- TUI **doesn't surface `Mode::Shadow`'s confidence threshold** or
+  per-key promotion state. Should appear in the dashboard once the
+  trainer is wired.
+- Queue tab has no filtering (all events shown). At >100 events,
+  needs a search input or accepted/rejected filter.
 
 ### P0 follow-ups
-1. `status` first-run detection (~10 LOC).
-2. `graduate` confirmation prompt (~5 LOC).
-3. `sync` three-state messaging spec.
-4. Status surfaces feedback queue depth once queue lands on disk.
+1. Persist mode changes on `m` key (write `config.toml`).
+2. Surface confidence-threshold + per-key promoted-or-not in
+   dashboard, once the classifier exists.
+3. Queue-tab search/filter at >100 events.
 
 ## Reproduction
 
@@ -56,4 +67,5 @@ cargo build
 ./scripts/capture-screenshots.sh
 ```
 
-Outputs 6 PNGs to `docs/screenshots/`. Deterministic across runs.
+Outputs 9 PNGs to `docs/screenshots/`. CLI shots are deterministic;
+TUI shots depend on the user's `~/.atsisbroken/profile.toml` content.

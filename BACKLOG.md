@@ -70,6 +70,10 @@ as they ship. Order under each section reflects priority.
 - [x] PLAN Phase 1 #4: strategy ladder + CDP attach proof-of-life
       (CDP-attach → CDP-launch → extension → userscript → bookmarklet
       → clipboard → speak; `run` auto-picks; per-strategy subcommands).
+- [x] TUI as default interface (Claude Code aesthetic, 3 tabs:
+      dashboard/queue/strategy). Behind `tui` feature, default-on. TUI
+      screenshots auto-captured via ratatui TestBackend → HTML →
+      headless Chromium. (this commit)
 - [x] Coverage push to 156 tests (was 77): JSON-shape pinning for every
       bridge variant + Experience + Education; resume parser fed 13
       diverse inputs; userscript brace/paren/metadata + don't-clobber

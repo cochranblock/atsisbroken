@@ -29,6 +29,8 @@ pub mod cdp;
 pub mod paths;
 pub mod resume;
 pub mod strategy;
+#[cfg(feature = "tui")]
+pub mod tui;
 
 /// Seed corpus of generic ATS field → key pairs. Compiled into the binary.
 /// Bootstrap signal for users who have not yet built up their own labelled

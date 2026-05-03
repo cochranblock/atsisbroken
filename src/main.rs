@@ -14,11 +14,15 @@ use std::io::Read;
 #[command(
     name = "atsisbroken",
     version,
-    about = "ATS is broken. Fill it locally with a model you trained."
+    about = "ATS is broken. Fill it locally with a model you trained.",
+    long_about = "Run with no subcommand to drop into the TUI (the default \
+                  interface). Subcommands are available for scripting and \
+                  one-shot tasks."
 )]
 struct Cli {
+    /// Optional. Run with no subcommand to launch the TUI.
     #[command(subcommand)]
-    cmd: Cmd,
+    cmd: Option<Cmd>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -64,6 +68,21 @@ enum Cmd {
     /// Probe for a running Chromium debug port and list its open tabs.
     /// Diagnostic / proof-of-life for the CDP transport.
     CdpProbe,
+    /// Launch the TUI explicitly. Same effect as running with no
+    /// subcommand. Documented so it appears in --help.
+    Tui,
+    /// Render one TUI tab to HTML. Hidden from --help; used by
+    /// scripts/capture-screenshots.sh to produce real PNG screenshots
+    /// of the TUI via headless Chromium.
+    #[command(hide = true)]
+    TuiSnapshot {
+        #[arg(long, default_value_t = 0)]
+        tab: usize,
+        #[arg(long, default_value_t = 120)]
+        width: u16,
+        #[arg(long, default_value_t = 32)]
+        height: u16,
+    },
     /// Take off the training wheels. Subsequent `run`s fill autonomously.
     Graduate,
     /// Drain the local feedback queue if delivery is configured and the
@@ -106,20 +125,48 @@ fn parse_mode(s: &str) -> Result<Mode, String> {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Init { resume } => cmd_init(resume).await,
-        Cmd::Run { mode, cdp, strategy } => cmd_run(mode, cdp, strategy).await,
-        Cmd::Userscript => cmd_userscript().await,
-        Cmd::Bookmarklet => cmd_bookmarklet().await,
-        Cmd::Copy { key } => cmd_copy(key).await,
-        Cmd::Speak => cmd_speak().await,
-        Cmd::CdpProbe => cmd_cdp_probe().await,
-        Cmd::Graduate => cmd_graduate().await,
-        Cmd::Sync => cmd_sync().await,
-        Cmd::Export { out } => cmd_export(out).await,
-        Cmd::Bridge => cmd_bridge().await,
-        Cmd::InstallBridge { extension_id, binary } => cmd_install_bridge(extension_id, binary),
-        Cmd::Status => cmd_status().await,
+        None => cmd_tui().await,
+        Some(Cmd::Init { resume }) => cmd_init(resume).await,
+        Some(Cmd::Run { mode, cdp, strategy }) => cmd_run(mode, cdp, strategy).await,
+        Some(Cmd::Userscript) => cmd_userscript().await,
+        Some(Cmd::Bookmarklet) => cmd_bookmarklet().await,
+        Some(Cmd::Copy { key }) => cmd_copy(key).await,
+        Some(Cmd::Speak) => cmd_speak().await,
+        Some(Cmd::CdpProbe) => cmd_cdp_probe().await,
+        Some(Cmd::Graduate) => cmd_graduate().await,
+        Some(Cmd::Sync) => cmd_sync().await,
+        Some(Cmd::Export { out }) => cmd_export(out).await,
+        Some(Cmd::Bridge) => cmd_bridge().await,
+        Some(Cmd::InstallBridge { extension_id, binary }) => cmd_install_bridge(extension_id, binary),
+        Some(Cmd::Status) => cmd_status().await,
+        Some(Cmd::Tui) => cmd_tui().await,
+        Some(Cmd::TuiSnapshot { tab, width, height }) => cmd_tui_snapshot(tab, width, height).await,
     }
+}
+
+#[cfg(feature = "tui")]
+async fn cmd_tui() -> Result<()> {
+    atsisbroken::tui::run().map_err(|e| anyhow!("{e}"))
+}
+
+#[cfg(not(feature = "tui"))]
+async fn cmd_tui() -> Result<()> {
+    Err(anyhow!(
+        "atsisbroken was built without the `tui` feature. Run a subcommand instead, or rebuild with --features tui."
+    ))
+}
+
+#[cfg(feature = "tui")]
+async fn cmd_tui_snapshot(tab: usize, width: u16, height: u16) -> Result<()> {
+    let html = atsisbroken::tui::render_html_for_screenshot(tab, width, height)
+        .map_err(|e| anyhow!("{e}"))?;
+    print!("{html}");
+    Ok(())
+}
+
+#[cfg(not(feature = "tui"))]
+async fn cmd_tui_snapshot(_tab: usize, _width: u16, _height: u16) -> Result<()> {
+    Err(anyhow!("tui feature not built"))
 }
 
 async fn cmd_init(resume_path: Option<String>) -> Result<()> {

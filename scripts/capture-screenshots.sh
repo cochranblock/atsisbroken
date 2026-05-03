@@ -50,13 +50,32 @@ shot() {
 ${body}"
 }
 
-echo "Capturing screenshots →"
+tui_shot() {
+    local name="$1"
+    local title="$2"
+    local tab="$3"
+    local html_file
+    html_file=$(mktemp --suffix=.html)
+    "$BIN" tui-snapshot --tab "$tab" --width 120 --height 32 > "$html_file"
+    "$CHROMIUM" --headless --disable-gpu --no-sandbox --hide-scrollbars \
+        --screenshot="$OUT/$name.png" --window-size=1180,720 \
+        "file://$html_file" >/dev/null 2>&1
+    rm -f "$html_file"
+    echo "  rendered: $OUT/$name.png  ($title)"
+}
+
+echo "Capturing CLI screenshots →"
 shot 01-help     "atsisbroken --help"          "$BIN" --help
 shot 02-status   "atsisbroken status"           "$BIN" status
-shot 03-init     "atsisbroken init"             "$BIN" init
-shot 04-run      "atsisbroken run"              "$BIN" run
-shot 05-graduate "atsisbroken graduate"         "$BIN" graduate
-shot 06-sync     "atsisbroken sync"             "$BIN" sync
+shot 03-userscript "atsisbroken userscript --help"  "$BIN" userscript --help
+shot 04-bookmarklet "atsisbroken bookmarklet --help" "$BIN" bookmarklet --help
+shot 05-cdp-probe "atsisbroken cdp-probe"      "$BIN" cdp-probe
+shot 06-speak    "atsisbroken speak"            "$BIN" speak
+
+echo "Capturing TUI screenshots →"
+tui_shot tui-1-dashboard "TUI dashboard"  0
+tui_shot tui-2-queue     "TUI queue"      1
+tui_shot tui-3-strategy  "TUI strategy"   2
 
 echo "Done. ls $OUT:"
 ls -la "$OUT"
