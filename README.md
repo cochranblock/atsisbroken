@@ -39,6 +39,7 @@ For the exopack TRIPLE SIMS determinism gate, see [`docs/PROOF.md`](docs/PROOF.m
 
 ## Docs
 
+- [`docs/USER_FLOW.md`](docs/USER_FLOW.md) — install → first fill → graduation → chaos
 - [`docs/USER_STORIES.md`](docs/USER_STORIES.md)
 - [`docs/TIMELINE.md`](docs/TIMELINE.md)
 - [`docs/PROOF.md`](docs/PROOF.md)
