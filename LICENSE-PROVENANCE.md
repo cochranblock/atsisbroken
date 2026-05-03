@@ -49,9 +49,10 @@ and the fix should be free forever" thesis depends on that being true.
 ## Provenance & timeline
 
 The artifact timeline (when each design decision was made and what commit
-it landed in) lives in `docs/TIMELINE.md`. The reproducible verifications
-of each artifact live in `docs/PROOF.md`. Together, those two files plus
-the git history are the prior-art record for this work.
+it landed in) lives in `TIMELINE_OF_INVENTION.md`. The reproducible
+verifications of each artifact live in `PROOF_OF_ARTIFACTS.md`. Together,
+those two files plus the git history are the prior-art record for this
+work.
 
 If a third party later claims earlier authorship of the architecture (Path
 B WASM-core ATS-killer with bundled custom safetensors), the canonical

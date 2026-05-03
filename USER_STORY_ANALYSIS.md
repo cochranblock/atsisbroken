@@ -88,7 +88,7 @@ baked third-party weights. Three autonomy modes:
 | A4 | Field uses `name="user_phone_mobile"` | Inference receives `name` as part of the descriptor. ✅ |
 | A5 | Adversarial label: `<label>Email of your manager</label>` | Pure-keyword classifier would mis-fire; the trained model is the resolver. ⚠️ depends on model quality |
 | A6 | Field requests "salary expectation" — not in Profile schema | Spec: model emits `unknown` → binary skips field. Never invent. ⚠️ enforced once `kova-engine::Engine::from_safetensors` is wired |
-| A7 | Network call attempted by atsisbroken | Crate dependency tree reviewed in `docs/PROOF.md`. No HTTP client outside `chromiumoxide`'s local CDP socket. ✅ structurally |
+| A7 | Network call attempted by atsisbroken | Crate dependency tree reviewed in `PROOF_OF_ARTIFACTS.md`. No HTTP client outside `chromiumoxide`'s local CDP socket. ✅ structurally |
 | A8 | Binary tries to download a model from CDN | Model is `include_bytes!`-baked at compile time. Cannot be fetched at runtime. ✅ structurally guaranteed |
 | A9 | User reinstalls and loses profile | Profile is a TOML file the user owns. Survives reinstall trivially. ✅ |
 | A10 | Browser crashes mid-fill | CDP session detect + restart. ⚠️ not yet wired |

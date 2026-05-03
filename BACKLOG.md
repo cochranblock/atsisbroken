@@ -1,0 +1,69 @@
+# atsisbroken — Backlog
+
+Live working list. Items get moved to `## Done` (with the commit hash)
+as they ship. Order under each section reflects priority.
+
+## Now
+
+- [ ] Persist `FeedbackQueue` to `~/.atsisbroken/feedback.jsonl` on
+      `bridge` exit (currently in-memory only).
+- [ ] `atsisbroken init` — actually parse pasted resume text → Profile.
+- [ ] `atsisbroken run` — wire chromiumoxide CDP loop. Snapshot DOM,
+      classify, fill, verify (Workday re-render defense).
+- [ ] `atsisbroken graduate` — confirmation prompt + flip mode in
+      `~/.atsisbroken/config.toml`.
+- [ ] `atsisbroken install-bridge` — write Chrome Native Messaging host
+      manifest into the right per-OS path; user pastes extension ID.
+- [ ] `atsisbroken sync-config --destination ...` — toggle
+      `FeedbackDelivery::SendWhenOnline`.
+- [ ] `atsisbroken status` — first-run detection ("not initialized — run
+      `atsisbroken init`"), feedback queue depth, current mode (not just
+      default).
+
+## Next
+
+- [ ] Real classifier — logistic regression over hand-engineered
+      features from FieldDescriptor. Trains in seconds on CPU.
+- [ ] Online updater — apply each `Feedback` / `Observation` event to
+      the model with SGD.
+- [ ] Confidence threshold gate in `Shadow` mode — wire
+      `ConfidenceThreshold` into the run-loop.
+- [ ] `atsisbroken bake` (with `--features train`) — train a personal
+      classifier from the user's accumulated `feedback.jsonl`.
+
+## Soon
+
+- [ ] Convert Chromium autofill heuristics test corpus to our JSONL
+      format. ~1,500–3,000 high-quality pairs from
+      `chrome/test/data/autofill/heuristics`.
+- [ ] In-page CDP overlay for `TrainingWheels` yes/no prompts (instead
+      of terminal prompts).
+- [ ] GitHub Actions: cross-compile `--profile=diamond-edge` for the
+      four target triples, attach to a Release.
+- [ ] `master` → `main` for default-branch parity with the rest of
+      cochranblock.
+
+## Android
+
+- [ ] Wire `cargo-ndk` cross-compile for arm64-v8a / armeabi-v7a /
+      x86_64.
+- [ ] WebView JavaScriptInterface for DOM extraction + autofill
+      (mobile equivalent of `extension/content.js`).
+- [ ] Play Store listing: privacy policy, screenshots, store description.
+
+## Later
+
+- [ ] Web Store submission for the Chrome extension.
+- [ ] Native Messaging install path automated for Brave / Edge / Arc /
+      Chromium variants.
+
+## Done
+
+- [x] Pivot to single-binary CDP architecture (`e09cf05` superseded by `8758903`).
+- [x] On-demand user-trained model (`8758903`).
+- [x] Offline feedback queue + opt-in sync (`a73b958`).
+- [x] Auto-screenshots + UX sim + Android scaffold (`26e82e5`).
+- [x] Real test coverage + training-data sourcing posture (`e840cb8`).
+- [x] Training data: real sources verified (`b92d59b`).
+- [x] `Mode::Shadow` + Chrome extension ↔ desktop bridge (`0386909`).
+- [x] `docs/USER_FLOW.md` end-to-end walkthrough (`98bc907`).

@@ -65,5 +65,5 @@ parent crate via `path = ".."`.
 - No `READ_EXTERNAL_STORAGE`, no `RECORD_AUDIO`, no location.
 - Privacy policy: identical to desktop — local-first, no cloud, no
   accounts. The Play listing should link to `LICENSE-PROVENANCE.md`
-  and `docs/USER_STORIES.md` for diligence.
+  and `USER_STORY_ANALYSIS.md` for diligence.
 - Free, no IAP, no ads. Ever.

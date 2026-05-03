@@ -1,7 +1,7 @@
 # atsisbroken — Proof of Artifacts
 
-Verifiable evidence behind `TIMELINE.md`. Every entry reproduces from the
-named commit.
+Verifiable evidence behind `TIMELINE_OF_INVENTION.md`. Every entry
+reproduces from the named commit.
 
 ## Commit ledger
 
