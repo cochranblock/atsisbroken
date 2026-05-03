@@ -41,6 +41,7 @@ For the exopack TRIPLE SIMS determinism gate, see [`PROOF_OF_ARTIFACTS.md`](PROO
 
 Top-level (Cochran Block convention):
 - [`README.md`](README.md)
+- [`PLAN.md`](PLAN.md) — engineering + distribution + narrative + interested-parties
 - [`USER_STORY_ANALYSIS.md`](USER_STORY_ANALYSIS.md)
 - [`TIMELINE_OF_INVENTION.md`](TIMELINE_OF_INVENTION.md)
 - [`PROOF_OF_ARTIFACTS.md`](PROOF_OF_ARTIFACTS.md)
