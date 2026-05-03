@@ -44,6 +44,14 @@ enum Cmd {
     },
     /// Take off the training wheels. Subsequent `run`s fill autonomously.
     Graduate,
+    /// Drain the local feedback queue if delivery is configured and the
+    /// network is reachable. Otherwise no-op. Always safe to run offline.
+    Sync,
+    /// Write the local feedback queue to a path the user can email manually.
+    Export {
+        #[arg(long)]
+        out: String,
+    },
     /// Print the current configuration.
     Status,
 }
@@ -63,8 +71,26 @@ async fn main() -> Result<()> {
         Cmd::Init { resume } => cmd_init(resume).await,
         Cmd::Run { mode, cdp } => cmd_run(mode, cdp).await,
         Cmd::Graduate => cmd_graduate().await,
+        Cmd::Sync => cmd_sync().await,
+        Cmd::Export { out } => cmd_export(out).await,
         Cmd::Status => cmd_status().await,
     }
+}
+
+async fn cmd_sync() -> Result<()> {
+    eprintln!(
+        "atsisbroken {} — sync: drain feedback queue if online + delivery configured (not yet implemented)",
+        version()
+    );
+    Ok(())
+}
+
+async fn cmd_export(_out: String) -> Result<()> {
+    eprintln!(
+        "atsisbroken {} — export: write feedback queue to file (not yet implemented)",
+        version()
+    );
+    Ok(())
 }
 
 async fn cmd_init(_resume: Option<String>) -> Result<()> {

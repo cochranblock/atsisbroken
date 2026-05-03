@@ -114,6 +114,64 @@ pub struct TrainingPair {
     pub expected: String,
 }
 
+/// Where queued feedback goes when the user runs `atsisbroken sync`.
+/// Default is `LocalOnly` — no network ever. The user has to opt in.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FeedbackDelivery {
+    /// Feedback stays on disk. `sync` is a no-op.
+    LocalOnly,
+    /// When `sync` runs and the network is reachable, send the queue.
+    /// Destination is free-form: `mailto:you@example.com` or
+    /// `https://hook.example.com/feedback`. If offline, queue stays local
+    /// and `sync` exits 0.
+    SendWhenOnline { destination: String },
+}
+
+impl Default for FeedbackDelivery {
+    fn default() -> Self {
+        FeedbackDelivery::LocalOnly
+    }
+}
+
+/// Append-only on-disk feedback log. Survives crashes, survives offline.
+/// One JSON line per [`Feedback`] event. Drained by `sync` if delivery
+/// is configured AND the network is reachable.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FeedbackQueue {
+    pub events: Vec<Feedback>,
+}
+
+impl FeedbackQueue {
+    pub fn append(&mut self, fb: Feedback) {
+        self.events.push(fb);
+    }
+    pub fn len(&self) -> usize {
+        self.events.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
+    /// Serialize as JSONL — one event per line, append-friendly format.
+    pub fn to_jsonl(&self) -> Result<String, serde_json::Error> {
+        let mut out = String::new();
+        for ev in &self.events {
+            out.push_str(&serde_json::to_string(ev)?);
+            out.push('\n');
+        }
+        Ok(out)
+    }
+    /// Parse from JSONL. Empty lines skipped.
+    pub fn from_jsonl(text: &str) -> Result<Self, serde_json::Error> {
+        let events = text
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(serde_json::from_str)
+            .collect::<Result<Vec<Feedback>, _>>()?;
+        Ok(Self { events })
+    }
+}
+
 /// Parse the embedded seed corpus into structured training pairs. This
 /// runs once at `init` time. Failures are fatal — a corrupt seed corpus
 /// is a build-time bug, not a runtime fallback.
@@ -208,6 +266,46 @@ mod tests {
     #[test]
     fn mode_default_is_training_wheels() {
         assert_eq!(Mode::default(), Mode::TrainingWheels);
+    }
+
+    #[test]
+    fn feedback_delivery_default_is_local_only() {
+        assert_eq!(FeedbackDelivery::default(), FeedbackDelivery::LocalOnly);
+    }
+
+    #[test]
+    fn feedback_queue_jsonl_round_trip() {
+        let mut q = FeedbackQueue::default();
+        q.append(Feedback {
+            field: FieldDescriptor {
+                label: "Email".into(),
+                placeholder: "".into(),
+                aria_label: "".into(),
+                name: "email".into(),
+                id: "".into(),
+                kind: "email".into(),
+            },
+            predicted: "email".into(),
+            actual: "email".into(),
+            accepted: true,
+        });
+        q.append(Feedback {
+            field: FieldDescriptor {
+                label: "Why this role?".into(),
+                placeholder: "".into(),
+                aria_label: "".into(),
+                name: "why".into(),
+                id: "".into(),
+                kind: "textarea".into(),
+            },
+            predicted: "freetext".into(),
+            actual: "skip".into(),
+            accepted: false,
+        });
+        let jsonl = q.to_jsonl().unwrap();
+        let back = FeedbackQueue::from_jsonl(&jsonl).unwrap();
+        assert_eq!(q, back);
+        assert_eq!(back.len(), 2);
     }
 
     #[test]
