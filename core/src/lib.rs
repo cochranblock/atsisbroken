@@ -113,3 +113,84 @@ pub fn predict_field_key_js(field: JsValue) -> Result<String, JsValue> {
         serde_wasm_bindgen::from_value(field).map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(predict_field_key(&f).to_string())
 }
+
+// ─── tests ─────────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fd(label: &str, placeholder: &str, aria: &str, name: &str, id: &str) -> FieldDescriptor {
+        FieldDescriptor {
+            label: label.into(),
+            placeholder: placeholder.into(),
+            aria_label: aria.into(),
+            name: name.into(),
+            id: id.into(),
+            kind: "text".into(),
+        }
+    }
+
+    /// Canonical fixture set. Exopack TRIPLE SIMS gate hashes this
+    /// after running predict_field_key on every input. Output must be
+    /// byte-identical across three independent runs.
+    fn fixtures() -> Vec<(FieldDescriptor, &'static str)> {
+        vec![
+            (fd("Email", "", "", "email", "email"), "email"),
+            (fd("", "your.email@example.com", "", "", ""), "email"),
+            (fd("", "", "Mobile phone number", "", ""), "phone"),
+            (fd("", "", "", "user_phone_mobile", ""), "phone"),
+            (fd("LinkedIn URL", "", "", "linkedin_url", ""), "linkedin"),
+            (fd("GitHub", "", "", "", ""), "github"),
+            (fd("Personal website", "", "", "", ""), "website"),
+            (fd("Street address", "", "", "address1", ""), "address"),
+            (fd("Are you authorized to work?", "", "", "", ""), "work_authorization"),
+            (fd("Visa sponsorship required?", "", "", "", ""), "work_authorization"),
+            (fd("Years of experience", "", "", "yrs_exp", ""), "years_experience"),
+            (fd("First name", "", "", "fname", ""), "full_name"),
+            (fd("Last name", "", "", "lname", ""), "full_name"),
+            (fd("Full name", "", "", "name", ""), "full_name"),
+            (fd("Salary expectation", "", "", "", ""), ""), // unknown → empty
+            (fd("Why do you want this job?", "", "", "", ""), ""), // free-text → empty
+        ]
+    }
+
+    #[test]
+    fn predict_field_key_matches_fixtures() {
+        for (f, expected) in fixtures() {
+            assert_eq!(
+                predict_field_key(&f),
+                expected,
+                "label={:?} placeholder={:?} name={:?}",
+                f.label,
+                f.placeholder,
+                f.name
+            );
+        }
+    }
+
+    /// TRIPLE SIMS in-test: run the same fixture set three times and assert the
+    /// resulting key sequence is byte-identical each pass. This is the
+    /// determinism contract the exopack gate enforces externally.
+    #[test]
+    fn triple_sims_determinism() {
+        let run = || -> Vec<String> {
+            fixtures()
+                .into_iter()
+                .map(|(f, _)| predict_field_key(&f).to_string())
+                .collect()
+        };
+        let s1 = run();
+        let s2 = run();
+        let s3 = run();
+        assert_eq!(s1, s2, "sim 1 vs sim 2 diverged");
+        assert_eq!(s2, s3, "sim 2 vs sim 3 diverged");
+    }
+
+    #[test]
+    fn no_fabrication_for_unknown_fields() {
+        // Critical user-trust property (P6 / A6): unknown fields return empty,
+        // never a guess. Extension treats "" as "do not autofill".
+        let unknown = fd("How many siblings do you have?", "", "", "", "");
+        assert_eq!(predict_field_key(&unknown), "");
+    }
+}

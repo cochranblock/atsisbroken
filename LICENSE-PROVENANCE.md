@@ -1,0 +1,81 @@
+# atsisbroken — License Provenance
+
+This file accompanies the `UNLICENSE` and exists to make the public-domain
+dedication unambiguous, dated, and tied to verifiable artifacts.
+
+## Author
+
+- **Name:** Michael Cochran
+- **Handle:** GotEmCoach
+- **Org:** The Cochran Block, LLC
+- **Contact:** mcochran@cochranblock.org
+
+## Dedication
+
+`atsisbroken` is dedicated to the public domain under the **Unlicense**
+(SPDX: `Unlicense`). The full text is in `UNLICENSE`. The dedication applies
+to every file in this repository at every commit, unless that file declares
+a different `SPDX-License-Identifier:` header (none currently do).
+
+This is a deliberate, irrevocable dedication. There is no premium tier, no
+"open core" carve-out, no future-rug-pull license change. The The Cochran Block, LLC
+position is that anti-ATS tooling is a public good and must remain so.
+
+## Contributors as of `e09cf05`
+
+- GotEmCoach (Michael Cochran) — design, architecture, all code.
+- KOVA — referenced inference engine (separate repo, also Unlicense).
+- Claude Opus 4.7 — pair-programming assistant during scaffold sessions
+  on 2026-05-01 and 2026-05-03. No copyrightable contribution claimed by
+  the assistant; outputs are work-for-hire to the human author per
+  Anthropic's terms.
+
+`Cargo.toml` declares this list canonically.
+
+## Public-domain dedication, in plain English
+
+You may take any file in this repository and:
+- copy it,
+- modify it,
+- publish it,
+- ship it inside a paid product,
+- ship it inside a free product,
+- republish it under a different license,
+- not credit the author at all,
+
+…with no obligation to the author or to The Cochran Block, LLC. The "ATS is broken,
+and the fix should be free forever" thesis depends on that being true.
+
+## Provenance & timeline
+
+The artifact timeline (when each design decision was made and what commit
+it landed in) lives in `docs/TIMELINE.md`. The reproducible verifications
+of each artifact live in `docs/PROOF.md`. Together, those two files plus
+the git history are the prior-art record for this work.
+
+If a third party later claims earlier authorship of the architecture (Path
+B WASM-core ATS-killer with bundled custom safetensors), the canonical
+counter-evidence is:
+
+- The git commits in this repo (root commit `e09cf05`, dated 2026-05-03).
+- The IRONHIVE tmux session logs on `kova-thick-beast` (n2/bt) showing
+  the architectural decision conversation on 2026-05-01.
+- The `Cargo.toml` mtime trail across the IRONHIVE-synced workspace.
+- Sibling repos (`kova`, `pixel-forge`, `cochranblock`) which the
+  architecture explicitly references, all also under The Cochran Block, LLC
+  authorship and dated earlier than this repo.
+
+## Trademark / brand
+
+"The Cochran Block, LLC" and the project name `atsisbroken` are not licensed under
+the Unlicense — those are brand assets retained by the author. The code is
+free; the name "atsisbroken" used for a hostile fork that misrepresents the
+provenance is not. This is the standard split (e.g., Linux is GPL, "Linux"
+is a trademark).
+
+## SPDX summary
+
+```
+SPDX-License-Identifier: Unlicense
+SPDX-FileCopyrightText: 2026 Michael Cochran <mcochran@cochranblock.org>
+```

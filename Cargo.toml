@@ -1,5 +1,5 @@
 # Unlicense — public domain — cochranblock.org
-# atsisbroken — ATS is broken. Browser-resident AI form-filling. Custom Cochran Block model. No open-source models. No cloud. No premium tier. Forever.
+# atsisbroken — ATS is broken. Browser-resident AI form-filling. Custom model by The Cochran Block, LLC. No open-source models. No cloud. No premium tier. Forever.
 # Stack: pixel-forge (model training pipeline) → custom field-deduction model (.safetensors) → kova-engine (inference + browser autopilot) → exopack TRIPLE SIMS gate.
 # Contributors: GotEmCoach, KOVA, Claude Opus 4.7
 
@@ -19,7 +19,7 @@ homepage = "https://simplify.cochranblock.org"
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# Cochran Block crates (paths; swap to crates.io or git when published).
+# The Cochran Block, LLC crates (paths; swap to crates.io or git when published).
 # kova-engine: inference only. No `browser`/`screenshot` — those are the kova-drives-Chrome
 # paradigm (Path A). atsisbroken is Path B: Chrome extension + WASM core, so the extension
 # IS the browser surface; we don't drive Chrome from outside.
