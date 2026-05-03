@@ -41,26 +41,23 @@ A free product can only come from someone who isn't optimizing for
 recurring revenue: an indie maintainer, a research lab, or a
 self-funded shop. That's a small pool of would-be builders.
 
-## 2. The engineering cost is 10× a SaaS
+## 2. The engineering surface looks bigger than it is on a SaaS roadmap
 
-Doing this right means:
-- Cross-compile for 4 desktop triples + 3 mobile ABIs.
-- Ship a model that trains on the user's machine in seconds on CPU.
-- Detect the user's default browser per OS (no clean Rust crate).
-- Optionally install Chromium when missing.
-- Native Messaging bridge between extension and binary.
-- Multi-tier strategy ladder (CDP → launch → extension → userscript
-  → bookmarklet → clipboard → speak).
-- TUI for terminal users.
-- Audit log + verbatim-source composer.
+Looking at this product in a SaaS planning doc, the surface area
+reads as scary: cross-compile for 7 targets, ship a local model,
+Native Messaging, multi-tier strategy ladder, TUI, audit log,
+verbatim-source composer. It looks like a quarter of work, easy.
 
-Compare to the cloud-LLM path: MV3 extension + REST calls + OpenAI
-key. A week to MVP, a month to ship.
+In an indie sprint with a focused builder, the same surface is
+days. The pieces compose; the iteration loop is local; the
+tests are deterministic; nothing is blocked on cloud infra
+spin-up or design review.
 
-The cost asymmetry isn't 2×, it's 10×. That's why every commercial
-competitor picked the easier path. Not because they didn't think of
-local — because local doesn't justify the eng spend on a SaaS
-balance sheet.
+The cost asymmetry vs a cloud-LLM SaaS is still real — but it's
+asymmetric on *focus and conviction*, not on absolute hours. A
+SaaS team with a roadmap, sprint planning, and stakeholder
+reviews would burn weeks on what an indie ships in days. That's
+why this gets built by indies first, not by funded teams.
 
 ## 3. The "AI cover letter" wave drowned out the right approach
 
@@ -79,22 +76,20 @@ applications, "AI cover letter detectors" are a product category —
 but the field is still oriented around generation rather than
 quotation. Someone has to build the alternative.
 
-## 4. The supporting infrastructure most builders need to assemble first
+## 4. The pieces don't have to be built fresh
 
-To ship this product alone, a builder needs:
-- A local inference engine.
-- A model-training pipeline that produces small `.safetensors`.
-- A determinism gate for the inevitable non-determinism in inference.
-- A multi-platform packaging story.
-- Cross-compile CI for at least 4 targets.
+A builder who tried to assemble this from scratch — local inference
+engine, training pipeline, determinism gate, multi-platform packaging
+— could do it, but they'd spend the first chunk of the project on
+infrastructure rather than the product itself.
 
-Each of those is a multi-month project on its own. A solo dev or
-small team would spend their first year building scaffolding before
-they could start on the ATS-specific layer.
-
-The only people for whom this is *not* a year of scaffolding are
-people who already have that infrastructure for unrelated reasons —
-which is rare.
+The pieces already exist as open libraries (candle, burn,
+ratatui, chromiumoxide, safetensors, the regex crate). What's
+rare is the conviction to wire them together for a free product
+when the path of least resistance is "ship a Chrome extension
+calling OpenAI." Most builders default to the easier path
+because the easier path is what every tutorial, every YC batch,
+every dev-influencer demo points at.
 
 ## 5. The technical timing is genuinely recent
 
@@ -134,19 +129,18 @@ not a target segment to monetize.
 ## What it would take
 
 Adding up §1–§6: someone has to be willing to do work that:
-- Doesn't pay (§1).
-- Costs 10× a normal product (§2).
+- Doesn't pay directly (§1).
+- Looks scarier on a SaaS roadmap than it actually is on a focused
+  sprint (§2).
 - Goes against industry hype (§3).
-- Requires ML/cross-compile infrastructure most teams don't have (§4).
+- Requires picking the harder right answer over the easy default (§4).
 - Couldn't have been done two years ago (§5).
 - Serves a vocal-but-small ideological core (§6).
 
 That intersection is small but not empty. Indie open-source
-maintainers, research groups, side-project shops with conviction.
-
-It's surprising no one has shipped this yet. It probably reflects
-how thin that intersection actually is — and how recent the
-technical timing in §5 became practical.
+maintainers and conviction-driven shops can ship this in days
+once they decide to. The puzzle isn't that the work is too big —
+it's that no one has decided to do it yet.
 
 The window is open now. It might not stay open: Chrome could ship
 better built-in autofill; Apple might add a system-level form-filler

@@ -20,6 +20,12 @@ use std::io::Read;
                   one-shot tasks."
 )]
 struct Cli {
+    /// Path to a profile TOML to use instead of `~/.atsisbroken/profile.toml`.
+    /// Lets you maintain multiple profiles side by side (e.g. one per
+    /// client if you're a career counselor).
+    #[arg(long, global = true)]
+    profile: Option<String>,
+
     /// Optional. Run with no subcommand to launch the TUI.
     #[command(subcommand)]
     cmd: Option<Cmd>,
@@ -124,21 +130,22 @@ fn parse_mode(s: &str) -> Result<Mode, String> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    let profile_override = cli.profile.as_deref().map(std::path::PathBuf::from);
     match cli.cmd {
         None => cmd_tui().await,
-        Some(Cmd::Init { resume }) => cmd_init(resume).await,
-        Some(Cmd::Run { mode, cdp, strategy }) => cmd_run(mode, cdp, strategy).await,
-        Some(Cmd::Userscript) => cmd_userscript().await,
-        Some(Cmd::Bookmarklet) => cmd_bookmarklet().await,
-        Some(Cmd::Copy { key }) => cmd_copy(key).await,
-        Some(Cmd::Speak) => cmd_speak().await,
+        Some(Cmd::Init { resume }) => cmd_init(resume, profile_override).await,
+        Some(Cmd::Run { mode, cdp, strategy }) => cmd_run(mode, cdp, strategy, profile_override).await,
+        Some(Cmd::Userscript) => cmd_userscript(profile_override).await,
+        Some(Cmd::Bookmarklet) => cmd_bookmarklet(profile_override).await,
+        Some(Cmd::Copy { key }) => cmd_copy(key, profile_override).await,
+        Some(Cmd::Speak) => cmd_speak(profile_override).await,
         Some(Cmd::CdpProbe) => cmd_cdp_probe().await,
         Some(Cmd::Graduate) => cmd_graduate().await,
         Some(Cmd::Sync) => cmd_sync().await,
         Some(Cmd::Export { out }) => cmd_export(out).await,
         Some(Cmd::Bridge) => cmd_bridge().await,
         Some(Cmd::InstallBridge { extension_id, binary }) => cmd_install_bridge(extension_id, binary),
-        Some(Cmd::Status) => cmd_status().await,
+        Some(Cmd::Status) => cmd_status(profile_override).await,
         Some(Cmd::Tui) => cmd_tui().await,
         Some(Cmd::TuiSnapshot { tab, width, height }) => cmd_tui_snapshot(tab, width, height).await,
     }
@@ -169,7 +176,7 @@ async fn cmd_tui_snapshot(_tab: usize, _width: u16, _height: u16) -> Result<()> 
     Err(anyhow!("tui feature not built"))
 }
 
-async fn cmd_init(resume_path: Option<String>) -> Result<()> {
+async fn cmd_init(resume_path: Option<String>, profile_override: Option<std::path::PathBuf>) -> Result<()> {
     let text = match resume_path {
         Some(path) => std::fs::read_to_string(&path)
             .with_context(|| format!("read resume file {path}"))?,
@@ -184,8 +191,10 @@ async fn cmd_init(resume_path: Option<String>) -> Result<()> {
         return Err(anyhow!("resume text was empty"));
     }
     let profile: Profile = resume::parse_resume(&text);
-    paths::ensure_dir()?;
-    let path = paths::profile_path();
+    let path = paths::profile_path_with_override(profile_override.as_deref());
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let toml_text = toml::to_string_pretty(&profile).context("serialize profile")?;
     std::fs::write(&path, toml_text).with_context(|| format!("write {}", path.display()))?;
     eprintln!("atsisbroken {} — wrote profile to {}", version(), path.display());
@@ -200,8 +209,9 @@ async fn cmd_run(
     _mode: Option<Mode>,
     _cdp: Option<String>,
     forced: Option<String>,
+    profile_override: Option<std::path::PathBuf>,
 ) -> Result<()> {
-    let profile = load_profile_or_hint()?;
+    let profile = load_profile_or_hint(profile_override.as_deref())?;
     let chosen = match forced.as_deref() {
         Some(s) => parse_strategy_override(s, &profile)?,
         None => strategy::detect(),
@@ -284,8 +294,8 @@ async fn run_cdp_attach(endpoint: &str) -> Result<()> {
     Ok(())
 }
 
-fn load_profile_or_hint() -> Result<Profile> {
-    let path = paths::profile_path();
+fn load_profile_or_hint(override_path: Option<&std::path::Path>) -> Result<Profile> {
+    let path = paths::profile_path_with_override(override_path);
     if !path.exists() {
         return Err(anyhow!(
             "profile not found at {} — run `atsisbroken init` first",
@@ -296,20 +306,20 @@ fn load_profile_or_hint() -> Result<Profile> {
     Ok(toml::from_str(&text).context("parse profile.toml")?)
 }
 
-async fn cmd_userscript() -> Result<()> {
-    let p = load_profile_or_hint()?;
+async fn cmd_userscript(profile_override: Option<std::path::PathBuf>) -> Result<()> {
+    let p = load_profile_or_hint(profile_override.as_deref())?;
     print!("{}", strategy::userscript(&p));
     Ok(())
 }
 
-async fn cmd_bookmarklet() -> Result<()> {
-    let p = load_profile_or_hint()?;
+async fn cmd_bookmarklet(profile_override: Option<std::path::PathBuf>) -> Result<()> {
+    let p = load_profile_or_hint(profile_override.as_deref())?;
     println!("{}", strategy::bookmarklet(&p));
     Ok(())
 }
 
-async fn cmd_copy(key: String) -> Result<()> {
-    let p = load_profile_or_hint()?;
+async fn cmd_copy(key: String, profile_override: Option<std::path::PathBuf>) -> Result<()> {
+    let p = load_profile_or_hint(profile_override.as_deref())?;
     let value = match key.as_str() {
         "full_name" => p.full_name,
         "email" => p.email,
@@ -332,8 +342,8 @@ async fn cmd_copy(key: String) -> Result<()> {
     Ok(())
 }
 
-async fn cmd_speak() -> Result<()> {
-    let p = load_profile_or_hint()?;
+async fn cmd_speak(profile_override: Option<std::path::PathBuf>) -> Result<()> {
+    let p = load_profile_or_hint(profile_override.as_deref())?;
     strategy::speak(&p, std::io::stdout())?;
     Ok(())
 }
@@ -543,23 +553,48 @@ fn cmd_install_bridge(extension_id: String, binary: Option<String>) -> Result<()
     Ok(())
 }
 
-async fn cmd_status() -> Result<()> {
-    let profile_path = paths::profile_path();
-    let initialized = profile_path.exists();
+async fn cmd_status(profile_override: Option<std::path::PathBuf>) -> Result<()> {
+    let profile_path = paths::profile_path_with_override(profile_override.as_deref());
+    let exists = profile_path.exists();
+    let populated = if exists {
+        std::fs::read_to_string(&profile_path)
+            .ok()
+            .and_then(|t| toml::from_str::<Profile>(&t).ok())
+            .map(|p| p.is_meaningfully_populated())
+            .unwrap_or(false)
+    } else {
+        false
+    };
     let feedback_path = paths::feedback_jsonl_path();
     let queue_depth = if feedback_path.exists() {
         FeedbackQueue::load_from(&feedback_path).map(|q| q.len()).unwrap_or(0)
     } else {
         0
     };
+    let detected = atsisbroken::browser_detect::default_browser();
     println!("atsisbroken {}", version());
     println!("seed corpus fingerprint: {:08x}", seed_corpus_fingerprint());
     println!("default mode: {:?}", Mode::default());
     println!("profile path: {}", profile_path.display());
-    println!(
-        "initialized: {}",
-        if initialized { "yes" } else { "no — run `atsisbroken init`" }
-    );
+    let init_state = if !exists {
+        "no — run `atsisbroken init`"
+    } else if !populated {
+        "exists but empty — re-run `atsisbroken init` with a fuller resume"
+    } else {
+        "yes"
+    };
+    println!("initialized: {init_state}");
     println!("feedback queue: {} events at {}", queue_depth, feedback_path.display());
+    match detected {
+        Some(b) => println!(
+            "default browser: {:?}{}",
+            b.kind,
+            b.path
+                .as_ref()
+                .map(|p| format!(" ({})", p.display()))
+                .unwrap_or_default()
+        ),
+        None => println!("default browser: (not detected)"),
+    }
     Ok(())
 }

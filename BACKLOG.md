@@ -5,8 +5,13 @@ as they ship. Order under each section reflects priority.
 
 ## Now — Browser Automation cluster (see `docs/PLAN_BROWSER_AUTOMATION.md`)
 
-- [ ] **A**   `browser_detect::default_browser()` — xdg-settings /
-      LSCopyDefault / HKCU UserChoice per OS.
+- [x] **A**   `browser_detect::default_browser()` — xdg-settings (Linux),
+      `defaults read` LaunchServices plist (macOS), PATH scan
+      (Windows; full HKCU UserChoice deferred to phase E.5). 17 tests
+      covering xdg-desktop kind inference, plist HTTP-handler parsing,
+      bundle-id mapping, Windows ProgId mapping, CDP-support gate.
+      Smoke-tested on the dev box: `default browser: Chromium
+      (/usr/bin/chromium)` shows in `status`.
 - [ ] **A.5** `browser_install` — portable Chromium download (zero-
       admin, SHA-256 verified) + package-manager fallback (with
       explicit `[y/N]` confirmation, no auto-sudo).
@@ -43,10 +48,12 @@ as they ship. Order under each section reflects priority.
       `FeedbackDelivery::SendWhenOnline`.
 - [ ] `atsisbroken status` — show *current* mode (not just default)
       once config.toml is wired.
-- [ ] `atsisbroken --profile <path>.toml` — multi-profile flag for
-      P4 (career counselors). Surfaced by `UI_UX_SIMULATION.md`.
-- [ ] `Profile::is_meaningfully_populated()` — distinguish "no
-      profile" from "profile exists but empty" (E6 finding).
+- [x] `atsisbroken --profile <path>.toml` — multi-profile flag for
+      P4 (career counselors). Threaded through init / run / status /
+      speak / userscript / bookmarklet / copy. Surfaced by
+      `UI_UX_SIMULATION.md`.
+- [x] `Profile::is_meaningfully_populated()` — `status` now reports
+      "exists but empty" vs "yes" vs "no". E6 finding closed.
 
 ## Next
 

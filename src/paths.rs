@@ -20,6 +20,17 @@ pub fn profile_path() -> PathBuf {
     p
 }
 
+/// If `override_path` is `Some`, use that path as the profile location
+/// (the `--profile` CLI flag). Otherwise fall back to the canonical
+/// `~/.atsisbroken/profile.toml`. Lets a user (e.g. P4 career counselor)
+/// keep multiple profiles side by side without env-var juggling.
+pub fn profile_path_with_override(override_path: Option<&std::path::Path>) -> PathBuf {
+    match override_path {
+        Some(p) => p.to_path_buf(),
+        None => profile_path(),
+    }
+}
+
 pub fn config_path() -> PathBuf {
     let mut p = atsisbroken_dir();
     p.push("config.toml");
@@ -159,5 +170,16 @@ mod tests {
                 Some("NativeMessagingHosts")
             );
         }
+    }
+
+    #[test]
+    fn profile_path_override_used_when_provided() {
+        let custom = std::path::PathBuf::from("/tmp/clients/jane.toml");
+        assert_eq!(profile_path_with_override(Some(&custom)), custom);
+    }
+
+    #[test]
+    fn profile_path_override_none_falls_back_to_default() {
+        assert_eq!(profile_path_with_override(None), profile_path());
     }
 }

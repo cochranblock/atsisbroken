@@ -25,6 +25,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod bridge;
+pub mod browser_detect;
 pub mod cdp;
 pub mod paths;
 pub mod resume;
@@ -54,6 +55,22 @@ pub struct Profile {
     pub education: Vec<Education>,
     pub skills: Vec<String>,
     pub raw_resume_text: String,
+}
+
+impl Profile {
+    /// True if at least two of the core identity fields are non-empty.
+    /// Distinguishes "init was run but the parser found nothing" from
+    /// "user has a real profile". Drives `status`'s first-run hint.
+    pub fn is_meaningfully_populated(&self) -> bool {
+        let signals = [
+            !self.full_name.is_empty(),
+            !self.email.is_empty(),
+            !self.phone.is_empty(),
+            !self.linkedin.is_empty(),
+            !self.github.is_empty(),
+        ];
+        signals.iter().filter(|x| **x).count() >= 2
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -597,6 +614,46 @@ mod tests {
         assert_eq!(p.years_experience, 0);
         assert!(p.skills.is_empty());
         assert!(p.experience.is_empty());
+    }
+
+    #[test]
+    fn is_meaningfully_populated_returns_false_for_empty() {
+        assert!(!Profile::default().is_meaningfully_populated());
+    }
+
+    #[test]
+    fn is_meaningfully_populated_false_with_only_one_field() {
+        // E6 finding: "init ran but parser found nothing" should be
+        // distinguishable from "real profile". One signal isn't enough.
+        let p = Profile {
+            full_name: "Jane".into(),
+            ..Default::default()
+        };
+        assert!(!p.is_meaningfully_populated());
+    }
+
+    #[test]
+    fn is_meaningfully_populated_true_with_two_fields() {
+        let p = Profile {
+            full_name: "Jane Doe".into(),
+            email: "jane@example.com".into(),
+            ..Default::default()
+        };
+        assert!(p.is_meaningfully_populated());
+    }
+
+    #[test]
+    fn is_meaningfully_populated_counts_only_identity_signals() {
+        // Address / years_experience / skills should NOT count toward
+        // the threshold — those don't disambiguate first-run from
+        // real-profile (a user might have only filled identity).
+        let p = Profile {
+            address: "1 Main St".into(),
+            years_experience: 7,
+            skills: vec!["rust".into(), "ml".into()],
+            ..Default::default()
+        };
+        assert!(!p.is_meaningfully_populated());
     }
 
     /// Pin the on-disk JSON shape of FieldDescriptor against a literal fixture.
