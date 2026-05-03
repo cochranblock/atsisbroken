@@ -77,6 +77,7 @@ Topic-specific (in `docs/`):
 - [`docs/USER_FLOW.md`](docs/USER_FLOW.md) — install → first fill → graduation → chaos
 - [`docs/UI_UX_ANALYSIS.md`](docs/UI_UX_ANALYSIS.md) — visual hierarchy, accessibility, gaps & recs
 - [`docs/UI_UX_SIMULATION.md`](docs/UI_UX_SIMULATION.md) — persona × environment walkthroughs (P1–P7, E1–E6)
+- [`docs/PLAN_BROWSER_AUTOMATION.md`](docs/PLAN_BROWSER_AUTOMATION.md) — TUI → launch browser → navigate → autofill, plus install-when-missing
 - [`docs/TRAINING_DATA.md`](docs/TRAINING_DATA.md) — responsibly-sourced data tiers
 
 Sub-product READMEs:

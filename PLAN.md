@@ -56,6 +56,27 @@ own machine. Demoable.
    cycle is the **only** Phase 1 item still open. (`aa93f81`)
 5. ⬜ Capture a 60-second demo video filling a Greenhouse form. Post it.
 
+### Phase 1.5 — Browser automation (Detailed in `docs/PLAN_BROWSER_AUTOMATION.md`)
+
+The TUI launches the user's browser of choice, navigates to a URL,
+classifies the form, and autofills fields per the user's mode.
+Six sub-phases (A through F), each shipping green individually.
+
+- A   default-browser detection per OS (xdg-settings / LSCopy /
+      HKCU UserChoice)
+- A.5 install Chromium when missing (portable download, zero-admin;
+      package-manager fallback with explicit confirmation; never
+      auto-sudo)
+- B   subprocess launcher with random debug port + tempdir
+- C   CDP `Session` (chromiumoxide WebSocket) + form snapshot
+- D   per-field fill + verify (Workday re-render defense)
+- E   TUI Browse tab (4th tab) for the user-facing flow
+- F   `atsisbroken go <url>` for scripting
+
+Anti-bot posture: visible window, no auto-submit, default
+`--rate-limit=6/min`, per-domain allowlist with prompt for
+unknown domains.
+
 ### Phase 2 — Real classifier (target: end of week 3)
 
 Replace the keyword pre-filter with a trained logistic-regression

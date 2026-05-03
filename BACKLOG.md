@@ -3,16 +3,38 @@
 Live working list. Items get moved to `## Done` (with the commit hash)
 as they ship. Order under each section reflects priority.
 
-## Now
+## Now — Browser Automation cluster (see `docs/PLAN_BROWSER_AUTOMATION.md`)
 
-- [ ] `atsisbroken run` — wire chromiumoxide CDP loop. Snapshot DOM,
-      classify, fill, verify (Workday re-render defense).
+- [ ] **A**   `browser_detect::default_browser()` — xdg-settings /
+      LSCopyDefault / HKCU UserChoice per OS.
+- [ ] **A.5** `browser_install` — portable Chromium download (zero-
+      admin, SHA-256 verified) + package-manager fallback (with
+      explicit `[y/N]` confirmation, no auto-sudo).
+- [ ] **B**   `browser_launcher::launch()` — Chromium subprocess
+      with `--remote-debugging-port=<random>` + temp user-data-dir;
+      `Drop` SIGTERMs.
+- [ ] **C**   `cdp::Session` — WebSocket attach via chromiumoxide,
+      `wait_for_idle`, `snapshot_form`.
+- [ ] **D**   `cdp::Session::fill` + `verify` — write value, dispatch
+      input/change events, re-snapshot 250ms later for Workday
+      re-render defense.
+- [ ] **E**   TUI Browse tab (4th tab) — URL input + history +
+      live status (idle/launching/classifying/filling/done).
+- [ ] **F**   `atsisbroken go <url>` subcommand — non-TUI entry to
+      the same flow; pipe-friendly with `--rate-limit`.
+
+## Now — other
+
 - [ ] `atsisbroken graduate` — confirmation prompt + flip mode in
       `~/.atsisbroken/config.toml`.
 - [ ] `atsisbroken sync-config --destination ...` — toggle
       `FeedbackDelivery::SendWhenOnline`.
 - [ ] `atsisbroken status` — show *current* mode (not just default)
       once config.toml is wired.
+- [ ] `atsisbroken --profile <path>.toml` — multi-profile flag for
+      P4 (career counselors). Surfaced by `UI_UX_SIMULATION.md`.
+- [ ] `Profile::is_meaningfully_populated()` — distinguish "no
+      profile" from "profile exists but empty" (E6 finding).
 
 ## Next
 
