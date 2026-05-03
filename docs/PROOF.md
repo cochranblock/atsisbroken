@@ -24,11 +24,11 @@ $ cargo check
 
 | Sim | SHA-256 |
 |---|---|
-| 1 | `5661f393e2bd730eb80cce11066ac0d483605ca29c6743786295a1f628ae07e8` |
-| 2 | `5661f393e2bd730eb80cce11066ac0d483605ca29c6743786295a1f628ae07e8` |
-| 3 | `5661f393e2bd730eb80cce11066ac0d483605ca29c6743786295a1f628ae07e8` |
+| 1 | `066e1dcd9a967fd8196ccbe920ac43cc85f936114c5868c5cc2a30659eaea81e` |
+| 2 | `066e1dcd9a967fd8196ccbe920ac43cc85f936114c5868c5cc2a30659eaea81e` |
+| 3 | `066e1dcd9a967fd8196ccbe920ac43cc85f936114c5868c5cc2a30659eaea81e` |
 
-40/40 tests pass on every sim (33 atsisbroken + 7 atsisbroken-android).
+51/51 tests pass on every sim (44 atsisbroken + 7 atsisbroken-android).
 Tautological tests removed; remaining suite is behavioral or schema-
 stability checks. Reproduce:
 ```sh

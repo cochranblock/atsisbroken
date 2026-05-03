@@ -7,8 +7,16 @@
 **Architecture in scope.** Single Rust binary that drives Chromium via the
 DevTools Protocol (`chromiumoxide`). The classifier is **trained locally**
 from the user's resume + a small seed corpus shipped with the binary. No
-baked third-party weights. Two autonomy modes: `TrainingWheels` (yes/no
-per fill, online learning) and `Chaos` (autonomous fill).
+baked third-party weights. Three autonomy modes:
+
+- **`TrainingWheels`** — yes/no per fill, supervised online learning.
+- **`Shadow`** — user fills manually, binary watches and learns from each
+  keystroke (`Observation` events). Once classifier confidence on a given
+  key crosses `ConfidenceThreshold` (default 0.85), that field type
+  auto-fills on the next sighting. The model graduates one field at a
+  time — email might go autonomous after 12 manual fills while
+  free-text-essay stays user-driven for months.
+- **`Chaos`** — fully autonomous on every classified field.
 
 ## Personas
 

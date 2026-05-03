@@ -52,6 +52,13 @@ enum Cmd {
         #[arg(long)]
         out: String,
     },
+    /// Run the Chrome Native Messaging host loop. Speaks the framed
+    /// JSON protocol (4-byte LE length + UTF-8 JSON) on stdin/stdout.
+    /// Spawned by Chrome when the atsisbroken extension calls
+    /// `chrome.runtime.connectNative("org.cochranblock.atsisbroken")`.
+    /// Drains the extension's chrome.storage.local observations into
+    /// the local feedback queue.
+    Bridge,
     /// Print the current configuration.
     Status,
 }
@@ -59,6 +66,7 @@ enum Cmd {
 fn parse_mode(s: &str) -> Result<Mode, String> {
     match s {
         "training-wheels" | "training_wheels" | "training" => Ok(Mode::TrainingWheels),
+        "shadow" => Ok(Mode::Shadow),
         "chaos" => Ok(Mode::Chaos),
         other => Err(format!("unknown mode: {other}")),
     }
@@ -73,8 +81,22 @@ async fn main() -> Result<()> {
         Cmd::Graduate => cmd_graduate().await,
         Cmd::Sync => cmd_sync().await,
         Cmd::Export { out } => cmd_export(out).await,
+        Cmd::Bridge => cmd_bridge().await,
         Cmd::Status => cmd_status().await,
     }
+}
+
+async fn cmd_bridge() -> Result<()> {
+    use atsisbroken::{bridge::serve_native_messaging, FeedbackQueue};
+    let stdin = std::io::stdin();
+    let stdout = std::io::stdout();
+    let mut queue = FeedbackQueue::default();
+    let mut r = stdin.lock();
+    let mut w = stdout.lock();
+    serve_native_messaging(&mut r, &mut w, &mut queue)
+        .map_err(|e| anyhow::anyhow!("bridge: {e}"))?;
+    // TODO: persist `queue` to ~/.atsisbroken/feedback.jsonl on exit.
+    Ok(())
 }
 
 async fn cmd_sync() -> Result<()> {

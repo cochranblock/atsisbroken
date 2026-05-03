@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "atsisbroken",
+  "version": "0.0.0",
+  "description": "Watch ATS forms, learn what you fill, hand it off to the local atsisbroken binary. No cloud.",
+  "permissions": ["storage", "activeTab", "scripting", "nativeMessaging"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "atsisbroken"
+  }
+}

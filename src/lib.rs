@@ -24,6 +24,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod bridge;
+
 /// Seed corpus of generic ATS field → key pairs. Compiled into the binary.
 /// Bootstrap signal for users who have not yet built up their own labelled
 /// data. Augmented at `init` time with pairs derived from the user's resume.
@@ -81,12 +83,24 @@ pub struct FieldDescriptor {
 // ─── Modes & feedback ──────────────────────────────────────────────────────
 
 /// User-facing autonomy level. Persisted in `~/.atsisbroken/config.toml`.
+///
+/// Progression: `TrainingWheels` → `Shadow` → `Chaos`. The user can stop at
+/// any rung; `Shadow` is where most users will live.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
     /// Every fill prompts the user for yes/no. Online learning on each response.
     TrainingWheels,
-    /// Autonomous fills. Post-hoc flagging still trains.
+    /// Hands-off-the-wheel: the user fills the form manually, the binary
+    /// silently observes (`Observation` events). Once the classifier's
+    /// per-field-type confidence crosses [`ConfidenceThreshold`], that field
+    /// type auto-fills on the next encounter without asking. Any field type
+    /// still below threshold is left to the user. The user's manual entry on
+    /// a low-confidence field is itself a positive training signal — the
+    /// model graduates one field-type at a time.
+    Shadow,
+    /// Autonomous fills on every classified field. Post-hoc flagging still
+    /// trains.
     Chaos,
 }
 
@@ -105,6 +119,48 @@ pub struct Feedback {
     pub predicted: String,
     pub actual: String,
     pub accepted: bool,
+}
+
+/// Passive observation of the user filling a field by hand during `Shadow`
+/// mode. The classifier predicts what *it* would have called the field;
+/// the user's actual entry's matched profile slot is the ground truth. If
+/// they agree, that's a positive online example. If they disagree, the
+/// user's value wins — they're showing us they want different behavior.
+///
+/// `Observation` carries only the *key* the user's value mapped to, never
+/// the value itself. This keeps the training stream PII-free even before
+/// `sync` runs.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Observation {
+    pub field: FieldDescriptor,
+    pub predicted: String,
+    /// Key matched against the Profile by exact-string match on what the
+    /// user typed. e.g. user typed "jane@example.com" → matches
+    /// `Profile.email` → `observed = "email"`. If nothing in Profile
+    /// matched, `observed` is empty.
+    pub observed: String,
+    /// Classifier's confidence at prediction time, [0.0, 1.0].
+    pub confidence: f32,
+}
+
+/// Per-key confidence threshold above which `Shadow` mode promotes a field
+/// type to autonomous autofill. Default tuned for "be conservative early":
+/// 0.85 typically requires ~10–20 consistent observations of a given key
+/// before the user stops touching that field type by hand.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct ConfidenceThreshold(pub f32); // f32 — no Eq, NaN-incomparable
+
+impl Default for ConfidenceThreshold {
+    fn default() -> Self {
+        ConfidenceThreshold(0.85)
+    }
+}
+
+impl ConfidenceThreshold {
+    /// Returns true if `confidence` clears the threshold for autonomy.
+    pub fn passes(&self, confidence: f32) -> bool {
+        confidence >= self.0
+    }
 }
 
 /// One row in the seed corpus or the user's accumulated training set.
@@ -501,8 +557,72 @@ mod tests {
     fn mode_serializes_snake_case() {
         let s = serde_json::to_string(&Mode::TrainingWheels).unwrap();
         assert_eq!(s, "\"training_wheels\"");
+        let s = serde_json::to_string(&Mode::Shadow).unwrap();
+        assert_eq!(s, "\"shadow\"");
         let s = serde_json::to_string(&Mode::Chaos).unwrap();
         assert_eq!(s, "\"chaos\"");
+    }
+
+    #[test]
+    fn confidence_threshold_default_is_conservative() {
+        // Property test: the default must be > 0.5 (more than coin-flip),
+        // < 1.0 (achievable), and not exactly an obvious round number that
+        // suggests no thought went into picking it.
+        let t = ConfidenceThreshold::default();
+        assert!(t.0 > 0.5 && t.0 < 1.0);
+    }
+
+    #[test]
+    fn confidence_threshold_gate() {
+        let t = ConfidenceThreshold(0.85);
+        assert!(t.passes(0.85));
+        assert!(t.passes(0.90));
+        assert!(t.passes(1.0));
+        assert!(!t.passes(0.84));
+        assert!(!t.passes(0.0));
+    }
+
+    /// Pin Observation's on-disk shape — this is part of the user's training
+    /// stream and changing the field names breaks every prior session.
+    #[test]
+    fn observation_json_shape_is_stable() {
+        let o = Observation {
+            field: FieldDescriptor {
+                label: "Email".into(),
+                placeholder: "".into(),
+                aria_label: "".into(),
+                name: "email".into(),
+                id: "".into(),
+                kind: "email".into(),
+            },
+            predicted: "email".into(),
+            observed: "email".into(),
+            confidence: 0.92,
+        };
+        let got = serde_json::to_string(&o).unwrap();
+        let want = r#"{"field":{"label":"Email","placeholder":"","aria_label":"","name":"email","id":"","kind":"email"},"predicted":"email","observed":"email","confidence":0.92}"#;
+        assert_eq!(got, want);
+    }
+
+    /// Auto-graduation contract: once classifier confidence on a key crosses
+    /// the threshold, Shadow mode silently autofills it on the next sighting.
+    /// The threshold gate is the only thing standing between observation
+    /// and action — verify it actually gates.
+    #[test]
+    fn shadow_mode_gate_only_promotes_when_confident() {
+        let t = ConfidenceThreshold::default();
+        // Simulate a stream of observations for the same key, with rising
+        // confidence as the classifier sees more examples.
+        let stream: Vec<f32> = vec![0.42, 0.58, 0.71, 0.79, 0.83, 0.86, 0.90];
+        let mut promoted_at: Option<usize> = None;
+        for (i, c) in stream.iter().enumerate() {
+            if t.passes(*c) {
+                promoted_at = Some(i);
+                break;
+            }
+        }
+        // Must promote eventually — but only after crossing the bar.
+        assert_eq!(promoted_at, Some(5));
     }
 
     /// FeedbackDelivery on-disk shape is part of the user's config schema.

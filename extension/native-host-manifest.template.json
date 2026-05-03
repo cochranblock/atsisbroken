@@ -1,0 +1,9 @@
+{
+  "name": "org.cochranblock.atsisbroken",
+  "description": "atsisbroken native messaging host",
+  "path": "REPLACE_WITH_ABSOLUTE_PATH_TO_atsisbroken_BINARY_PLUS_BRIDGE_ARG",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://REPLACE_WITH_INSTALLED_EXTENSION_ID/"
+  ]
+}
