@@ -5,20 +5,14 @@ as they ship. Order under each section reflects priority.
 
 ## Now
 
-- [ ] Persist `FeedbackQueue` to `~/.atsisbroken/feedback.jsonl` on
-      `bridge` exit (currently in-memory only).
-- [ ] `atsisbroken init` — actually parse pasted resume text → Profile.
 - [ ] `atsisbroken run` — wire chromiumoxide CDP loop. Snapshot DOM,
       classify, fill, verify (Workday re-render defense).
 - [ ] `atsisbroken graduate` — confirmation prompt + flip mode in
       `~/.atsisbroken/config.toml`.
-- [ ] `atsisbroken install-bridge` — write Chrome Native Messaging host
-      manifest into the right per-OS path; user pastes extension ID.
 - [ ] `atsisbroken sync-config --destination ...` — toggle
       `FeedbackDelivery::SendWhenOnline`.
-- [ ] `atsisbroken status` — first-run detection ("not initialized — run
-      `atsisbroken init`"), feedback queue depth, current mode (not just
-      default).
+- [ ] `atsisbroken status` — show *current* mode (not just default)
+      once config.toml is wired.
 
 ## Next
 
@@ -67,3 +61,9 @@ as they ship. Order under each section reflects priority.
 - [x] Training data: real sources verified (`b92d59b`).
 - [x] `Mode::Shadow` + Chrome extension ↔ desktop bridge (`0386909`).
 - [x] `docs/USER_FLOW.md` end-to-end walkthrough (`98bc907`).
+- [x] Doc structure aligned with Cochran Block convention (`aacb982`).
+- [x] PLAN.md — engineering + distribution + interested-parties (`b0c7120`).
+- [x] PLAN Phase 1 #1: persist FeedbackQueue to ~/.atsisbroken/feedback.jsonl (this commit).
+- [x] PLAN Phase 1 #2: `install-bridge` writes per-OS Native Messaging manifest (this commit).
+- [x] PLAN Phase 1 #3: `init` parses resume text → Profile, writes profile.toml (this commit).
+- [x] `status` first-run detection + feedback queue depth (this commit).

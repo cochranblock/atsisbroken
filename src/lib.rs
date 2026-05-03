@@ -25,6 +25,8 @@
 use serde::{Deserialize, Serialize};
 
 pub mod bridge;
+pub mod paths;
+pub mod resume;
 
 /// Seed corpus of generic ATS field → key pairs. Compiled into the binary.
 /// Bootstrap signal for users who have not yet built up their own labelled
@@ -225,6 +227,30 @@ impl FeedbackQueue {
             .map(serde_json::from_str)
             .collect::<Result<Vec<Feedback>, _>>()?;
         Ok(Self { events })
+    }
+
+    /// Read the queue from `path`. A missing file yields an empty queue
+    /// (first-run is not an error). A corrupt file is fatal — the user's
+    /// training history must not be silently dropped.
+    pub fn load_from(path: &std::path::Path) -> std::io::Result<Self> {
+        match std::fs::read_to_string(path) {
+            Ok(text) => Self::from_jsonl(&text)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Atomically write the queue to `path`. Writes to `<path>.tmp` then
+    /// renames; a crash mid-write leaves the previous file intact.
+    pub fn save_to(&self, path: &std::path::Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let tmp = path.with_extension("jsonl.tmp");
+        let body = self.to_jsonl().map_err(std::io::Error::other)?;
+        std::fs::write(&tmp, body)?;
+        std::fs::rename(&tmp, path)
     }
 }
 
@@ -684,6 +710,49 @@ mod tests {
         let jsonl = q.to_jsonl().unwrap();
         let lines: Vec<&str> = jsonl.lines().collect();
         assert_eq!(lines.len(), 3);
+    }
+
+    #[test]
+    fn feedback_queue_load_missing_file_is_empty() {
+        let dir = std::env::temp_dir().join(format!(
+            "atsisbroken_load_missing_{}",
+            std::process::id()
+        ));
+        let path = dir.join("nope.jsonl");
+        let q = FeedbackQueue::load_from(&path).unwrap();
+        assert!(q.is_empty());
+    }
+
+    #[test]
+    fn feedback_queue_save_then_load_round_trip() {
+        let dir = std::env::temp_dir().join(format!(
+            "atsisbroken_save_load_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("feedback.jsonl");
+        let mut q = FeedbackQueue::default();
+        q.append(sample_fb("Email", "email", "email", true));
+        q.append(sample_fb("Phone", "phone", "phone", true));
+        q.save_to(&path).unwrap();
+        let back = FeedbackQueue::load_from(&path).unwrap();
+        assert_eq!(q, back);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn feedback_queue_save_atomically_via_tmp() {
+        // After save, the .tmp file must not exist (it was renamed).
+        let dir = std::env::temp_dir().join(format!(
+            "atsisbroken_atomic_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("feedback.jsonl");
+        FeedbackQueue::default().save_to(&path).unwrap();
+        let tmp = path.with_extension("jsonl.tmp");
+        assert!(!tmp.exists(), ".tmp must be renamed away");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
