@@ -1,0 +1,28 @@
+# Unlicense — public domain — cochranblock.org
+# atsisbroken-android — JNI crate. cdylib loaded by the Android app via
+# System.loadLibrary("atsisbroken_android"). Wraps the parent atsisbroken
+# crate's schemas + classifier so Kotlin can drive them from a WebView.
+# Contributors: GotEmCoach, KOVA, Claude Opus 4.7
+
+[package]
+name = "atsisbroken-android"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Michael Cochran <mcochran@cochranblock.org>"]
+description = "JNI bindings: atsisbroken Rust core for the Android WebView shell."
+license = "Unlicense"
+publish = false
+
+[lib]
+name = "atsisbroken_android"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Parent crate — same Profile / FieldDescriptor / Mode / Feedback schemas.
+atsisbroken = { path = ".." }
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"

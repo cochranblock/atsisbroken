@@ -42,5 +42,7 @@ For the exopack TRIPLE SIMS determinism gate, see [`docs/PROOF.md`](docs/PROOF.m
 - [`docs/USER_STORIES.md`](docs/USER_STORIES.md)
 - [`docs/TIMELINE.md`](docs/TIMELINE.md)
 - [`docs/PROOF.md`](docs/PROOF.md)
+- [`docs/UI_UX_SIM.md`](docs/UI_UX_SIM.md) — auto-captured screenshots + findings
+- [`android/README.md`](android/README.md) — Kotlin WebView shell + Rust JNI core
 - [`LICENSE-PROVENANCE.md`](LICENSE-PROVENANCE.md)
 - [`UNLICENSE`](UNLICENSE)

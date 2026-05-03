@@ -24,11 +24,11 @@ $ cargo check
 
 | Sim | SHA-256 |
 |---|---|
-| 1 | `34a1398e1fa8cb38969539755f1d1a60369ddfa9ae427e41cb750344e36861f9` |
-| 2 | `34a1398e1fa8cb38969539755f1d1a60369ddfa9ae427e41cb750344e36861f9` |
-| 3 | `34a1398e1fa8cb38969539755f1d1a60369ddfa9ae427e41cb750344e36861f9` |
+| 1 | `a05a097cd9e7497bd999f6d1a625ce2e887b9505b6105b22e40bfba1f8dbe9b6` |
+| 2 | `a05a097cd9e7497bd999f6d1a625ce2e887b9505b6105b22e40bfba1f8dbe9b6` |
+| 3 | `a05a097cd9e7497bd999f6d1a625ce2e887b9505b6105b22e40bfba1f8dbe9b6` |
 
-10/10 tests pass on every sim. Reproduce:
+12/12 tests pass on every sim (10 atsisbroken + 2 atsisbroken-android). Reproduce:
 ```sh
 for i in 1 2 3; do
   cargo test --quiet 2>&1 | grep -E "^test |result:" | sort | sha256sum
