@@ -23,6 +23,18 @@ as they ship. Order under each section reflects priority.
 - [ ] **F**   `atsisbroken go <url>` subcommand — non-TUI entry to
       the same flow; pipe-friendly with `--rate-limit`.
 
+## Now — Profile + GitHub cluster (see `docs/PLAN_PROFILE_AND_GITHUB.md`)
+
+- [ ] **G**   Expanded `Profile` (~75 fields) + v0→v1 migration
+- [ ] **H**   `init` walks every field group, with parser-derived defaults
+- [ ] **I**   `connect-github` + `sync-github` → `~/.atsisbroken/github_inventory.json`
+- [ ] **J**   Question classifier: 12 prompt patterns → answer slots
+- [ ] **K**   Answer composer: verbatim-source free-form answers + audit log
+- [ ] **L.5** Custom patterns at `~/.atsisbroken/custom_patterns.toml`:
+      user-defined question routes + extractors + answer slots, all
+      regex-safe (size_limit, compile/exec timeouts, verbatim-only output)
+- [ ] **L**   TUI tabs 4 (Profile) + 5 (GitHub)
+
 ## Now — other
 
 - [ ] `atsisbroken graduate` — confirmation prompt + flip mode in

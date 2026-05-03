@@ -115,6 +115,25 @@ classifier over hand-engineered features.
     `--chaos` (Shadow → Chaos) with confirmation prompts.
 18. UX sim re-runs against the live app screenshots (not stub output).
 
+### Phase 4.5 — Profile schema + GitHub answers (Detailed in `docs/PLAN_PROFILE_AND_GITHUB.md`)
+
+The profile grows from 11 fields to ~75 to cover every category of
+ATS question. A GitHub inventory lives alongside profile.toml; free-
+form answers are composed verbatim from the inventory + profile,
+attributable to commit messages, README sentences, and Profile
+field values. Users extend via `custom_patterns.toml` (regex-based
+question routes + extractors), all sandboxed (no exec, verbatim
+output only, regex-size limits).
+
+Sub-phases G–L:
+  G   Expanded `Profile` + v0→v1 migration
+  H   `init` walks every field group
+  I   `connect-github` + `sync-github`
+  J   Question classifier
+  K   Answer composer + audit log
+  L.5 Custom patterns hook
+  L   TUI Profile + GitHub tabs (5-tab nav)
+
 ### Phase 5 — Ecosystem (target: end of week 12)
 
 19. Public roadmap on GitHub Projects so contributors can self-assign.
