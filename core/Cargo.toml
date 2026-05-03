@@ -1,0 +1,22 @@
+[package]
+name = "atsisbroken-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Resume model, profile, field-to-data matching. Compiled to WASM for the Chrome extension; usable as a normal Rust lib for the CLI."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+# wasm-bindgen + serde-wasm-bindgen only on wasm32 — native builds (CLI) skip them.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen.workspace = true
+serde-wasm-bindgen.workspace = true

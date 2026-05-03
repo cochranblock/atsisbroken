@@ -1,0 +1,65 @@
+# Unlicense — public domain — cochranblock.org
+# atsisbroken — ATS is broken. Browser-resident AI form-filling. Custom Cochran Block model. No open-source models. No cloud. No premium tier. Forever.
+# Stack: pixel-forge (model training pipeline) → custom field-deduction model (.safetensors) → kova-engine (inference + browser autopilot) → exopack TRIPLE SIMS gate.
+# Contributors: GotEmCoach, KOVA, Claude Opus 4.7
+
+[workspace]
+resolver = "2"
+members = ["core", "cli"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Michael Cochran <mcochran@cochranblock.org>"]
+license = "Unlicense"
+repository = "https://github.com/cochranblock/atsisbroken"
+homepage = "https://simplify.cochranblock.org"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Cochran Block crates (paths; swap to crates.io or git when published).
+# kova-engine: inference only. No `browser`/`screenshot` — those are the kova-drives-Chrome
+# paradigm (Path A). atsisbroken is Path B: Chrome extension + WASM core, so the extension
+# IS the browser surface; we don't drive Chrome from outside.
+kova-engine = { path = "../kova", default-features = false, features = ["inference"] }
+pixel-forge = { path = "../pixel-forge" }
+# JS ↔ WASM bridge for the Chrome extension's content/background scripts.
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
+
+
+# ─── DIAMOND RUST BINARY ARCHITECTURE ───────────────────────────────
+# Canonical: https://cochranblock.org/diamond-profile.toml
+# Both profiles inherit release. One crystal, no fracture planes.
+#
+# Use SPEED-Diamond for the CLI (request-serving / daemon paths):
+#   cargo build --profile=diamond -p atsisbroken-cli
+#
+# Use SIZE-Diamond for the WASM core (every byte ships in the Chrome extension):
+#   cargo build --profile=diamond-edge -p atsisbroken-core --target wasm32-unknown-unknown
+
+[profile.diamond]
+inherits = "release"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+overflow-checks = false
+debug = false
+incremental = false
+split-debuginfo = "off"
+
+[profile.diamond-edge]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+overflow-checks = false
+debug = false
+incremental = false
+split-debuginfo = "off"

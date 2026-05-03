@@ -1,0 +1,19 @@
+[package]
+name = "atsisbroken-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "atsisbroken CLI — manage profile and resume locally. Never uploads."
+
+[[bin]]
+name = "atsisbroken"
+path = "src/main.rs"
+
+[dependencies]
+atsisbroken-core = { path = "../core" }
+serde.workspace = true
+serde_json.workspace = true
