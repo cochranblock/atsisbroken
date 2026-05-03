@@ -76,6 +76,27 @@ parser (13 distinct inputs), userscript syntactic checks, integration
 tests against the actual built binary in `tests/cli_smoke.rs`.
 Exopack TRIPLE SIMS gate: 156/156 × 3 byte-identical. Commit `aa93f81`.
 
+**TUI as default surface.** Three-tab terminal app (dashboard / queue
+/ strategy) with Claude-Code aesthetic — minimal borders, dim status
+footer with keybind hints, vim/arrow/digit navigation. Real-pixel
+TUI screenshots via ratatui's `TestBackend` → styled HTML →
+headless Chromium. Commit `6eed497`.
+
+**Browser automation Phase A.** `browser_detect` module: per-OS
+default-browser detection (Linux `xdg-settings`, macOS LaunchServices
+plist parser, Windows PATH scan). `BrowserKind` enum with
+`.supports_cdp()` — Firefox is the lone false, falls through to
+userscript automatically. Commit `72ac7a9`.
+
+**Multi-profile support.** `--profile <path>` global flag threaded
+through every subcommand that touches a profile. Closes the P4
+career-counselor finding from `UI_UX_SIMULATION.md`. Commit `72ac7a9`.
+
+**`Profile::is_meaningfully_populated`.** Distinguishes "init ran but
+parser found nothing" from "real profile" — `status` now reports
+three states (`no` / `exists but empty` / `yes`). Closes the E6
+finding. Commit `72ac7a9`.
+
 ## Forward plan
 
 - Real CDP fill loop (chromiumoxide WebSocket, DOM snapshot,

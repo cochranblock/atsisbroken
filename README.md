@@ -18,7 +18,7 @@ By **The Cochran Block, LLC**. Public domain — `Unlicense`. Forever.
 $ atsisbroken                       # default: launch the TUI
 $ atsisbroken tui                   # same, explicit
 $ atsisbroken init                  # paste resume → Profile + seed model
-$ atsisbroken status                # current config / first-run hint
+$ atsisbroken status                # current config / first-run hint / detected default browser
 $ atsisbroken run                   # auto-pick best fill strategy for env
 $ atsisbroken graduate              # TrainingWheels → Shadow → Chaos
 $ atsisbroken sync                  # drain feedback queue if delivery configured
@@ -26,6 +26,11 @@ $ atsisbroken export --out FILE     # write feedback queue to disk
 $ atsisbroken bridge                # Chrome Native Messaging host loop
 $ atsisbroken install-bridge --extension-id ID
                                     # write Chrome Native Messaging manifest
+
+# --profile <path> works on every subcommand that touches a profile
+# (init / run / status / speak / userscript / bookmarklet / copy).
+$ atsisbroken --profile clients/jane.toml init
+$ atsisbroken --profile clients/jane.toml run
 ```
 
 The TUI is the primary interface — running with no subcommand opens a

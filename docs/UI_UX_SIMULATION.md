@@ -106,17 +106,18 @@ into Client B's autofill.
 | Step | What Lena sees | Outcome |
 |------|----------------|---------|
 | Download Windows binary | One .exe | ✓ |
-| `atsisbroken init` for Client A | Profile written to `%USERPROFILE%\.atsisbroken\profile.toml` | ⚠ no `--profile path` flag — only one profile per OS user |
-| Switches to Client B | Has to overwrite or move the profile file by hand | ✗ |
-| Imagines 50 clients | Filesystem juggling becomes the workflow | ✗ |
+| `atsisbroken --profile clients/jane.toml init` for Client A | Profile written to the path she chose | ✓ |
+| Switches to Client B | `--profile clients/bob.toml` — separate file, separate everything | ✓ |
+| 50 clients | One file per client; Lena owns the directory layout | ✓ |
+| Verifies isolation | `--profile clients/jane.toml status` shows Jane's profile path explicitly | ✓ |
 
-**Verdict:** ✗ multi-profile is the headline gap for P4. Fix:
+**Verdict:** ✓ — closed in commit `72ac7a9`. The `--profile <path>`
+top-level flag is threaded through init / run / status / speak /
+userscript / bookmarklet / copy. Lena now has a real workflow.
 
-- `atsisbroken --profile clients/jane.toml init`
-- `atsisbroken --profile clients/jane.toml run`
-- TUI dashboard shows profile filename in header
-- Estimated effort: 1 hour. Promote to "Recommendations to Implement"
-  in the next analysis pass.
+Remaining ⚠: TUI dashboard doesn't show the active profile filename
+in the header yet — a TUI launch with `--profile` works but the
+header still reads "atsisbroken" without the profile context. Polish.
 
 ---
 
@@ -297,8 +298,8 @@ fires before page is stable.
 
 | Finding (this doc)                                | Action                                                  | Where it lands |
 |---------------------------------------------------|---------------------------------------------------------|----------------|
-| P4: no multi-profile support                       | `--profile path.toml` flag                              | BACKLOG.md "Now" |
-| E6: first-run detection coarse                    | `Profile::is_meaningfully_populated()`                  | BACKLOG.md "Now" |
+| P4: no multi-profile support                       | `--profile path.toml` flag                              | DONE — commit `72ac7a9` |
+| E6: first-run detection coarse                    | `Profile::is_meaningfully_populated()`                  | DONE — commit `72ac7a9` |
 | Recurring: `graduate` lacks confirmation           | `[y/N]` prompt + `--yes`                                 | BACKLOG.md "Now" (already there) |
 | Adversarial-ATS: CDP fill loop unwired             | Phase 2 #11 in PLAN.md                                  | already tracked |
 | TUI: `m` doesn't persist                          | write config.toml on press                              | BACKLOG.md "Phase 2" (already there) |

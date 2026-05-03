@@ -168,19 +168,30 @@ from a script to atsisbroken. Same code path as the TUI's Browse tab.
 Each phase ships green: gate stays at 100% pass, new tests added per
 change. No phase reaches over the next.
 
-### Phase A — Browser detection (~1 day)
+### Phase A — Browser detection (DONE — commit `72ac7a9`)
 
-- `browser_detect::default_browser()` returns `Option<DefaultBrowser>`
-  with `{ kind: BrowserKind::{Chrome, Chromium, Firefox, Edge,
-  Brave, Arc, Other(String)}, path: PathBuf }`.
-- Tests:
-  - Mock `xdg-settings` output → expected kind.
-  - Mock `defaults read` plist parsing → expected kind.
-  - Mock registry path resolution → expected kind.
-  - Real-system test: returns *some* result on the dev box (smoke).
-- Updates `Strategy::detect()`: when `BrowserKind::Firefox` is the
-  default, downgrade to userscript automatically. When a Chromium
-  family is the default, the existing `CdpLaunch` already wins.
+`browser_detect::default_browser()` returns `Option<DefaultBrowser>`
+with `{ kind: BrowserKind, path: Option<PathBuf> }`. `BrowserKind`
+covers Chrome / Chromium / Firefox / Edge / Brave / Arc / Vivaldi /
+Opera / Other(String) and exposes `.supports_cdp()` (Firefox = false).
+
+Implementation:
+- Linux: `xdg-settings get default-web-browser` → desktop name →
+  `parse_xdg_desktop_name` → kind; `which` per kind for the path.
+- macOS: `defaults read com.apple.LaunchServices/com.apple.launchservices.secure`
+  → `parse_macos_launchservices_http_handler` walks the plist
+  blocks looking for `LSHandlerURLScheme = http`, captures the
+  matching `LSHandlerRoleAll` bundle id; `bundle_id_to_kind` maps
+  it; `path_for_macos_kind` resolves to the `.app` binary.
+- Windows: PATH-scan stub for now (full HKCU UserChoice registry
+  read deferred to Phase A.5 alongside install support).
+
+17 tests cover every parser branch; smoke test on the dev box prints
+`default browser: Chromium (/usr/bin/chromium)` in `status`.
+
+`Strategy::detect()` consults `default_browser()`: Firefox default
+→ skip CDP tiers, jump to userscript. Chromium-family → existing
+`CdpLaunch` path wins.
 
 ### Phase A.5 — Browser installation when missing (~2 days)
 

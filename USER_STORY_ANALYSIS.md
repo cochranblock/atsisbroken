@@ -96,6 +96,14 @@ baked third-party weights. Three autonomy modes:
 
 ## What the current scaffold actually delivers
 
+- ✅ TUI as default surface (Claude-Code aesthetic, three tabs).
+- ✅ Multi-profile via `--profile <path>` (P4 closed).
+- ✅ Strategy ladder with 7 fall-through tiers — userscript /
+  bookmarklet / clipboard / speak all working today.
+- ✅ Browser detection per OS (`status` shows the user's default).
+- ✅ Three-state initialized detection (`no` / `exists but empty` /
+  `yes`).
+- ✅ Chrome extension + Native Messaging bridge.
 - ✅ Single-package layout. `cargo build` produces one binary.
 - ✅ Custom `.safetensors` slot reserved at the workspace root, baked via
   `include_bytes!`. Currently a clearly-labeled placeholder.
