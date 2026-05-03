@@ -15,10 +15,26 @@ By **The Cochran Block, LLC**. Public domain — `Unlicense`. Forever.
   still trains.
 
 ```
-$ atsisbroken init      # paste resume → Profile + seed model
-$ atsisbroken run       # CDP attach + fill loop (training wheels)
-$ atsisbroken graduate  # take the wheels off
-$ atsisbroken status    # current config
+$ atsisbroken init                  # paste resume → Profile + seed model
+$ atsisbroken status                # current config / first-run hint
+$ atsisbroken run                   # auto-pick best fill strategy for env
+$ atsisbroken graduate              # TrainingWheels → Shadow → Chaos
+$ atsisbroken sync                  # drain feedback queue if delivery configured
+$ atsisbroken export --out FILE     # write feedback queue to disk
+$ atsisbroken bridge                # Chrome Native Messaging host loop
+$ atsisbroken install-bridge --extension-id ID
+                                    # write Chrome Native Messaging manifest
+```
+
+When CDP isn't available, `run` falls through a strategy ladder so the
+product is usable in every environment:
+
+```
+$ atsisbroken userscript            # output a TamperMonkey userscript
+$ atsisbroken bookmarklet           # output a javascript: bookmarklet
+$ atsisbroken copy email            # copy a single field to the clipboard
+$ atsisbroken speak                 # print every populated field
+$ atsisbroken cdp-probe             # diagnose Chromium debug port
 ```
 
 ## Build

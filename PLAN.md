@@ -40,18 +40,21 @@ GitHub Release and a public artifact someone could hold up.
   `USER_STORY_ANALYSIS`, `LICENSE-PROVENANCE`, `BACKLOG`,
   `CONTRIBUTORS`). ✅
 
-### Phase 1 — "Hello, real form" (target: end of week 1)
+### Phase 1 — "Hello, real form" (~80% DONE)
 
 The product fills *one* real ATS form end-to-end on the developer's
 own machine. Demoable.
 
-1. Persist `FeedbackQueue` to `~/.atsisbroken/feedback.jsonl`.
-2. `atsisbroken install-bridge` — auto-write the Native Messaging
-   manifest per OS, accept extension ID as a flag.
-3. `atsisbroken init` — parse pasted resume into `Profile`, save TOML.
-4. `atsisbroken run` — minimal CDP loop: attach, snapshot DOM, classify
-   via the existing keyword pre-filter, fill, verify. No model yet.
-5. Capture a 60-second demo video filling a Greenhouse form. Post it.
+1. ✅ Persist `FeedbackQueue` to `~/.atsisbroken/feedback.jsonl`. (`9ebd1ad`)
+2. ✅ `atsisbroken install-bridge` — writes the Native Messaging
+   manifest per OS, accepts extension ID as a flag. (`9ebd1ad`)
+3. ✅ `atsisbroken init` — parses pasted resume into `Profile`, saves
+   TOML. (`9ebd1ad`)
+4. ✅ Strategy ladder + CDP attach proof-of-life. `atsisbroken run`
+   auto-picks the best tier for the environment; CDP attach lists
+   tabs but doesn't yet write into the DOM. The destructive fill
+   cycle is the **only** Phase 1 item still open. (`aa93f81`)
+5. ⬜ Capture a 60-second demo video filling a Greenhouse form. Post it.
 
 ### Phase 2 — Real classifier (target: end of week 3)
 

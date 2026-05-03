@@ -23,14 +23,68 @@ Provenance docs added. Commit `f495a88`.
 **Pivot 3.** Baked third-party weights dropped. Architecture: ship a
 seed corpus + on-device trainer; on first run, atsisbroken trains a
 personal classifier from the user's resume + seed corpus, saved at
-`~/.atsisbroken/`. The user's model is the only model. Two autonomy
-modes: `TrainingWheels` (yes/no per fill, online learning) and `Chaos`
-(autonomous fill, post-hoc flagging still trains).
+`~/.atsisbroken/`. The user's model is the only model. Three autonomy
+modes: `TrainingWheels` (yes/no per fill, online learning), `Shadow`
+(observe user filling manually, auto-fill once per-key confidence
+crosses `ConfidenceThreshold`, default 0.85), and `Chaos` (fully
+autonomous, post-hoc flagging still trains).
+
+**Bridge.** Chrome extension + desktop binary connected via Native
+Messaging (4-byte LE length-prefixed UTF-8 JSON, max 1 MiB per
+Chrome's spec). Extension records `(FieldDescriptor → predicted_key)`
+events into `chrome.storage.local` (never the user's typed value);
+background service worker drains the queue every 5 minutes through
+`chrome.runtime.connectNative` to the desktop host's `bridge`
+subcommand. Commit `0386909`.
+
+**Doc structure.** Aligned with Cochran Block convention:
+`PROOF_OF_ARTIFACTS.md`, `TIMELINE_OF_INVENTION.md`,
+`USER_STORY_ANALYSIS.md`, `BACKLOG.md`, `CONTRIBUTORS.md`, `PLAN.md`
+all at the repo root. Topic docs in `docs/`. Commits `aacb982`,
+`b0c7120`.
+
+## 2026-05-03 — PLAN Phase 1 ship
+
+**#1 Persistent feedback queue.** `FeedbackQueue::{load_from, save_to}`
+with atomic `.tmp + rename`. Bridge subcommand reads on entry, writes
+on exit (even on protocol error mid-session). Commit `9ebd1ad`.
+
+**#2 `install-bridge` subcommand.** Auto-writes the Chrome Native
+Messaging host manifest to the per-OS path (macOS:
+`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`;
+Linux: `~/.config/google-chrome/NativeMessagingHosts/`). Commit
+`9ebd1ad`.
+
+**#3 `init` resume parser.** Hand-rolled, regex-free heuristic. Pulls
+email (with dotted-domain check), phone (10–15 digit run), LinkedIn /
+GitHub / generic website URLs, plausible name detection. End-to-end
+verified on the host. Commit `9ebd1ad`.
+
+**#4 Strategy ladder.** `atsisbroken run` auto-detects the environment
+and picks the highest-tier fill strategy that works:
+`CdpAttach` → `CdpLaunch` → `Extension` → `Userscript` →
+`Bookmarklet` → `Clipboard` → `Speak`. The floor (`Speak`) prints
+`key: value` to stdout and works literally anywhere atsisbroken runs.
+Per-strategy subcommands also dispatchable directly: `userscript`,
+`bookmarklet`, `copy <key>`, `speak`, `cdp-probe`. CDP attach itself
+is proof-of-life only at this commit (lists tabs; the destructive fill
+loop is the next iteration). Commit `aa93f81`.
+
+**Coverage push.** Test suite grew from 77 to 156. JSON-shape pinning
+on every wire-format struct, behavioral diversity on the resume
+parser (13 distinct inputs), userscript syntactic checks, integration
+tests against the actual built binary in `tests/cli_smoke.rs`.
+Exopack TRIPLE SIMS gate: 156/156 × 3 byte-identical. Commit `aa93f81`.
 
 ## Forward plan
 
-- CDP loop in `src/main.rs` (currently stubbed).
-- Trainer + online updater for `TrainingWheels` feedback.
-- In-page CDP overlay for the yes/no prompt.
+- Real CDP fill loop (chromiumoxide WebSocket, DOM snapshot,
+  classify-and-fill cycle, Workday re-render verifier).
+- Train pipeline (`--features train`): logistic regression over
+  hand-engineered FieldDescriptor features, online SGD updater.
+- Convert Chromium's `chrome/test/data/autofill/heuristics` corpus to
+  our JSONL training format (~1.5–3k high-quality pairs).
+- `atsisbroken sync-config --destination` to opt into
+  `FeedbackDelivery::SendWhenOnline`.
 - Cross-compile pipeline: GitHub Actions + `--profile=diamond-edge`.
 - `master` → `main` for default-branch parity.

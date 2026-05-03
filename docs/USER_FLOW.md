@@ -125,6 +125,38 @@ graduating field-types one at a time, on the user's own data.
 
 ---
 
+## 6.5. Strategy ladder — when CDP isn't available
+
+`atsisbroken run` does not assume Chromium is reachable. It detects the
+environment and picks the highest-tier fill strategy that works, then
+falls through if the higher tiers can't run. Every user reaches *some*
+working tier; nobody hits a "couldn't autofill, sorry" wall.
+
+| Tier | Strategy | When it triggers |
+|---|---|---|
+| 1 | `CdpAttach`   | Chromium with reachable `--remote-debugging-port` |
+| 2 | `CdpLaunch`   | A Chromium-family binary findable on the system |
+| 3 | `Extension`   | atsisbroken extension's native-messaging host installed |
+| 4 | `Userscript`  | TamperMonkey / Greasemonkey works; emit a userscript |
+| 5 | `Bookmarklet` | emit a `javascript:` URL the user drags to the bookmark bar |
+| 6 | `Clipboard`   | `pbcopy`/`xclip`/`wl-copy`/`clip.exe` on this OS — `atsisbroken copy <key>` per field |
+| 7 | `Speak`       | print `key: value` lines to stdout — the floor; works literally anywhere |
+
+Force a specific tier with `atsisbroken run --strategy=NAME`. Each tier
+also has its own subcommand for direct use:
+
+```sh
+atsisbroken userscript      # emit TamperMonkey script with profile baked in
+atsisbroken bookmarklet     # emit javascript: URL
+atsisbroken copy email      # copy a single field to system clipboard
+atsisbroken speak           # print profile values to type by hand
+atsisbroken cdp-probe       # diagnose Chromium debug port reachability
+```
+
+This is intentional: a paid SaaS product fails closed when its
+infrastructure isn't there. atsisbroken fails *down* through tiers
+until something works. The user always gets *some* leverage.
+
 ## 7. Surfaces, summarized
 
 | Surface | Used in flow |
