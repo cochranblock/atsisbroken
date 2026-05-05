@@ -143,6 +143,47 @@ a Greenhouse-shaped form, screenshot saved, feedback persisted.
 Commit `695a1d8`. **Product can now actually fill an ATS form for
 a real user.**
 
+**Mode persistence (Config struct + working `graduate`).** New
+`src/config.rs` with atomic save (`.toml.tmp + rename`),
+forward-compat field defaults (older configs load even when new
+fields are added). `cmd_graduate(yes, back)` replaces the
+`eprintln!("not yet wired")` stub:
+- TrainingWheels → Shadow → Chaos (forward, default)
+- `--back`: Chaos → Shadow → TrainingWheels
+- Refuses at either end with actionable error
+  (`AlreadyAtTop` hints `--back`, `AlreadyAtBottom` notes "already
+  the most supervised")
+- `--yes` skips the y/N prompt for scripting
+- `cmd_status` now reads persisted mode + surfaces
+  "(default — never run `atsisbroken graduate`)" vs
+  "(persisted in ~/.atsisbroken/config.toml)"
+8 unit tests on Config. Commit `45fa177`. **Mode is no longer a
+stub — it persists across runs.**
+
+**Mode-aware run loop (TrainingWheels prompts + Shadow gating).**
+New `decide(mode, key, confidence, threshold, has_value, has_dom_id)
+-> FillDecision::{Skip{reason}, Fill, Prompt}` — pure, testable,
+mode-policy-encoding fn. `SkipReason` enum surfaces *why*
+(NotClassified / NoProfileValue / NoDomId / BelowConfidenceThreshold).
+Skip-precedence honored: NotClassified > NoProfileValue > NoDomId >
+mode-specific.
+- **TrainingWheels:** stderr/stdin prompt per field
+  `field "Email" → email = "jane@..." — fill? [y/N]`. Yes → fill +
+  `accepted: true` Feedback. No → skip + `accepted: false` Feedback
+  with `actual=""` so a future trainer learns from rejections.
+- **Shadow:** `confidence >= ConfidenceThreshold` to fill. Today
+  the keyword classifier returns 1.0 for matches and 0.0 for
+  unknowns, so any threshold ≤ 1.0 passes everything matched. The
+  gating is structurally correct — when R4 lands a real-confidence
+  trained classifier, the threshold actually filters. Not over-claimed.
+- **Chaos:** fill everything classified.
+`predict_field_key_with_confidence(f) -> (&str, f32)` added.
+Signature stays stable for R4 swap.
+End-to-end smoke verified all three modes on the dev box. 10 unit
+tests on `decide` covering all skip paths, mode dispatch,
+inclusive threshold (`>=`), precedence ordering. Commit `f413829`.
+**Mode flag is no longer a stub — it changes behavior.**
+
 ## Forward plan
 
 - Real CDP fill loop (chromiumoxide WebSocket, DOM snapshot,
