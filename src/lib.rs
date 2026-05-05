@@ -303,6 +303,79 @@ pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// Cheap keyword classifier — keyword union over label + placeholder +
+/// aria_label + name + id. Returns one of the 11 vocabulary entries
+/// (the seed corpus's `expected` set) or empty string for unknown.
+///
+/// This is the Rust mirror of `extension/content.js::predictKey`. Both
+/// must agree byte-for-byte on the same input. Tested below.
+pub fn predict_field_key(f: &FieldDescriptor) -> &'static str {
+    let hay = format!(
+        "{} {} {} {} {}",
+        f.label, f.placeholder, f.aria_label, f.name, f.id
+    )
+    .to_lowercase();
+    let has = |needle: &str| hay.contains(needle);
+
+    // Strong, vendor-stable signals first (HTML5 input types).
+    // We deliberately do NOT use substring "tel" — it appears inside
+    // benign words like "websiteLinkedIn", "telegraph", "stelar".
+    let kind = f.kind.as_str();
+    if kind == "email" || has("email") {
+        return "email";
+    }
+    if kind == "tel" || has("phone") || has("mobile") {
+        return "phone";
+    }
+    // URL fields: route by the most specific platform signal in hay.
+    if has("linkedin") {
+        return "linkedin";
+    }
+    if has("github") {
+        return "github";
+    }
+    if has("website") || has("portfolio") {
+        return "website";
+    }
+    if has("address") || has("street") || has("city") || has("zip") {
+        return "address";
+    }
+    if has("authoriz") || has("visa") || has("sponsor") {
+        return "work_authorization";
+    }
+    if (has("year") || has("yrs")) && has("exp") {
+        return "years_experience";
+    }
+    if has("name") {
+        return "full_name";
+    }
+    if kind == "textarea" {
+        return "freetext";
+    }
+    ""
+}
+
+/// Resolve a classified key to the value the user has in their profile.
+/// Returns `None` for unknown / freetext / fields not in the schema.
+pub fn profile_value_for_key<'a>(profile: &'a Profile, key: &str) -> Option<&'a str> {
+    let v: &str = match key {
+        "full_name" => &profile.full_name,
+        "email" => &profile.email,
+        "phone" => &profile.phone,
+        "address" => &profile.address,
+        "linkedin" => &profile.linkedin,
+        "github" => &profile.github,
+        "website" => &profile.website,
+        "work_authorization" => &profile.work_authorization,
+        _ => return None,
+    };
+    if v.is_empty() {
+        None
+    } else {
+        Some(v)
+    }
+}
+
 pub fn seed_corpus_size() -> usize {
     SEED_CORPUS_JSONL.len()
 }
@@ -640,6 +713,155 @@ mod tests {
             ..Default::default()
         };
         assert!(p.is_meaningfully_populated());
+    }
+
+    // ─── predict_field_key ────────────────────────────────────────────────
+
+    fn fd(label: &str, placeholder: &str, aria: &str, name: &str, id: &str, kind: &str) -> FieldDescriptor {
+        FieldDescriptor {
+            label: label.into(),
+            placeholder: placeholder.into(),
+            aria_label: aria.into(),
+            name: name.into(),
+            id: id.into(),
+            kind: kind.into(),
+        }
+    }
+
+    #[test]
+    fn predict_email_via_label() {
+        assert_eq!(predict_field_key(&fd("Email", "", "", "", "", "email")), "email");
+    }
+    #[test]
+    fn predict_email_via_placeholder() {
+        assert_eq!(
+            predict_field_key(&fd("", "your.email@example.com", "", "", "", "text")),
+            "email"
+        );
+    }
+    #[test]
+    fn predict_phone_variants() {
+        assert_eq!(predict_field_key(&fd("Mobile phone", "", "", "", "", "tel")), "phone");
+        assert_eq!(predict_field_key(&fd("", "", "", "user_phone", "", "tel")), "phone");
+        assert_eq!(predict_field_key(&fd("Mobile #", "", "", "", "", "tel")), "phone");
+    }
+    #[test]
+    fn predict_linkedin_github_website() {
+        assert_eq!(predict_field_key(&fd("LinkedIn URL", "", "", "", "", "url")), "linkedin");
+        assert_eq!(predict_field_key(&fd("GitHub", "", "", "", "", "url")), "github");
+        assert_eq!(predict_field_key(&fd("Personal website", "", "", "", "", "url")), "website");
+        assert_eq!(predict_field_key(&fd("Portfolio", "", "", "", "", "url")), "website");
+    }
+    #[test]
+    fn predict_address_variants() {
+        assert_eq!(predict_field_key(&fd("Street address", "", "", "", "", "text")), "address");
+        assert_eq!(predict_field_key(&fd("City", "", "", "", "", "text")), "address");
+        assert_eq!(predict_field_key(&fd("Zip code", "", "", "", "", "text")), "address");
+    }
+    #[test]
+    fn predict_work_authorization_variants() {
+        assert_eq!(
+            predict_field_key(&fd("Are you authorized to work?", "", "", "", "", "select")),
+            "work_authorization"
+        );
+        assert_eq!(
+            predict_field_key(&fd("Visa sponsorship required?", "", "", "", "", "select")),
+            "work_authorization"
+        );
+    }
+    #[test]
+    fn predict_years_experience() {
+        assert_eq!(
+            predict_field_key(&fd("Years of relevant experience", "", "", "", "", "number")),
+            "years_experience"
+        );
+    }
+    #[test]
+    fn predict_full_name() {
+        assert_eq!(predict_field_key(&fd("First name", "", "", "fname", "", "text")), "full_name");
+        assert_eq!(predict_field_key(&fd("Last name", "", "", "", "", "text")), "full_name");
+        assert_eq!(predict_field_key(&fd("Full name", "", "", "", "", "text")), "full_name");
+    }
+    #[test]
+    fn predict_textarea_routes_to_freetext() {
+        assert_eq!(
+            predict_field_key(&fd("Why do you want this role?", "", "", "", "", "textarea")),
+            "freetext"
+        );
+    }
+    #[test]
+    fn predict_unknown_returns_empty_not_a_guess() {
+        assert_eq!(predict_field_key(&fd("Salary expectation", "", "", "", "", "number")), "");
+        assert_eq!(predict_field_key(&fd("", "", "", "", "", "text")), "");
+    }
+    #[test]
+    fn predict_does_not_match_tel_inside_unrelated_words() {
+        // Regression: ats_e2e.rs caught this — substring "tel" matched
+        // inside "websitelinkedin" / Workday's name="websiteLinkedIn".
+        // Must classify as linkedin, not phone.
+        assert_eq!(
+            predict_field_key(&fd(
+                "LinkedIn (Optional)",
+                "",
+                "LinkedIn URL",
+                "websiteLinkedIn",
+                "wd_lk",
+                "url"
+            )),
+            "linkedin"
+        );
+    }
+
+    #[test]
+    fn predict_phone_via_html_kind_tel() {
+        // The semantic input type="tel" is a strong, unambiguous signal.
+        let p = fd("", "", "", "", "ph", "tel");
+        assert_eq!(predict_field_key(&p), "phone");
+    }
+
+    #[test]
+    fn predict_email_via_html_kind_email() {
+        let e = fd("", "", "", "", "x", "email");
+        assert_eq!(predict_field_key(&e), "email");
+    }
+
+    #[test]
+    fn predict_email_outranks_name_when_both_present() {
+        // "name@email.com" placeholder must classify as email even though
+        // the label says "Name". User-trust property: email evidence wins.
+        assert_eq!(
+            predict_field_key(&fd("Contact name", "name@email.com", "", "", "", "text")),
+            "email"
+        );
+    }
+
+    #[test]
+    fn profile_value_for_key_empty_field_returns_none() {
+        // is_meaningfully_populated guards the empty case at the profile
+        // level; profile_value_for_key guards at the field level.
+        let p = Profile::default();
+        assert!(profile_value_for_key(&p, "email").is_none());
+    }
+
+    #[test]
+    fn profile_value_for_key_known_keys() {
+        let p = Profile {
+            full_name: "Jane".into(),
+            email: "j@e.com".into(),
+            phone: "+1".into(),
+            ..Default::default()
+        };
+        assert_eq!(profile_value_for_key(&p, "full_name"), Some("Jane"));
+        assert_eq!(profile_value_for_key(&p, "email"), Some("j@e.com"));
+        assert_eq!(profile_value_for_key(&p, "phone"), Some("+1"));
+    }
+
+    #[test]
+    fn profile_value_for_key_unknown_keys_return_none() {
+        let p = Profile { full_name: "Jane".into(), ..Default::default() };
+        assert!(profile_value_for_key(&p, "freetext").is_none());
+        assert!(profile_value_for_key(&p, "unknown").is_none());
+        assert!(profile_value_for_key(&p, "garbage").is_none());
     }
 
     #[test]

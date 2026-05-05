@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- Mock Lever-style application form. SPDX-License-Identifier: Unlicense -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Lever — Apply</title>
+<style>
+body{font:14px/1.4 'Inter',system-ui;max-width:600px;margin:30px auto;padding:0 20px}
+h1{font-size:24px;margin-bottom:4px}.posting-headline{color:#666;margin-bottom:24px}
+.application-question{margin:16px 0}
+.application-label{font-size:13px;font-weight:500;color:#333;margin-bottom:6px;display:block}
+input,textarea{width:100%;border:1px solid #ddd;padding:10px;border-radius:3px;box-sizing:border-box;font:inherit}
+button.template-btn-submit{background:#5e25ce;color:#fff;border:0;padding:12px 28px;border-radius:3px;margin-top:16px}
+</style></head>
+<body>
+<h1>Backend Engineer</h1>
+<div class="posting-headline">Beta Inc · Remote</div>
+<form>
+  <div class="application-question">
+    <label class="application-label" for="resume-upload">Full name</label>
+    <input type="text" name="name" id="resume-upload" required>
+  </div>
+  <div class="application-question">
+    <label class="application-label" for="email-input">E-mail address</label>
+    <input type="email" name="email" id="email-input" required>
+  </div>
+  <div class="application-question">
+    <label class="application-label" for="phone-input">Mobile phone</label>
+    <input type="tel" name="phone" id="phone-input">
+  </div>
+  <div class="application-question">
+    <!-- Lever uses aria-label heavily; this field has no visible label. -->
+    <input type="url" name="urls[LinkedIn]" id="lk" aria-label="LinkedIn URL" placeholder="LinkedIn URL">
+  </div>
+  <div class="application-question">
+    <input type="url" name="urls[GitHub]" id="gh" aria-label="GitHub URL" placeholder="GitHub URL">
+  </div>
+  <div class="application-question">
+    <input type="url" name="urls[Portfolio]" id="port" aria-label="Personal website" placeholder="Personal website">
+  </div>
+  <div class="application-question">
+    <label class="application-label" for="cv">What excites you about this role?</label>
+    <textarea name="comments" id="cv" rows="4"></textarea>
+  </div>
+  <div class="application-question">
+    <label class="application-label" for="auth">Are you authorized to work in the United States?</label>
+    <select name="work_authorization" id="auth"><option value="">Choose</option><option>Yes</option><option>No</option></select>
+  </div>
+  <button type="submit" class="template-btn-submit">Submit application</button>
+</form>
+</body></html>

@@ -45,6 +45,19 @@ fn http_get(host: &str, port: u16, path: &str) -> std::io::Result<String> {
     Ok(buf[body_start + 4..].to_string())
 }
 
+/// Fetch `/json/version` from the debugger port and return the
+/// `webSocketDebuggerUrl`. Used by `browser_launcher::wait_for_debug_port`
+/// as the readiness signal.
+pub fn fetch_json_version(port: u16) -> std::io::Result<String> {
+    let body = http_get("127.0.0.1", port, "/json/version")?;
+    let v: serde_json::Value =
+        serde_json::from_str(&body).map_err(std::io::Error::other)?;
+    v.get("webSocketDebuggerUrl")
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| std::io::Error::other("missing webSocketDebuggerUrl"))
+}
+
 /// Fetch `/json/list` from the debugger port and return parsed tabs.
 pub fn list_tabs(port: u16) -> std::io::Result<Vec<TabInfo>> {
     let body = http_get("127.0.0.1", port, "/json/list")?;

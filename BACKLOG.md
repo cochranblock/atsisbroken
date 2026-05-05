@@ -20,6 +20,19 @@ as they ship. Order under each section reflects priority.
       `Drop` SIGTERMs.
 - [ ] **C**   `cdp::Session` — WebSocket attach via chromiumoxide,
       `wait_for_idle`, `snapshot_form`.
+- [x] **mock ATS fixtures + e2e**: 3 hand-crafted fixture HTMLs
+      (greenhouse, lever, workday). `tests/ats_e2e.rs` launches real
+      chromium, navigates, snapshots fields via `page.evaluate`,
+      classifies each, asserts predictions against `expected.toml`,
+      fills via CDP, saves screenshots to `docs/screenshots/ats/`.
+      **Live test caught a real classifier bug** (substring "tel"
+      inside "websiteLinkedIn" routing to phone instead of linkedin)
+      that no unit test would have caught. Fixed; regression-pinned.
+- [ ] Split full_name into first_name / last_name (e2e screenshot
+      shows both first/last fields filled with the same string).
+- [ ] Split address into address_line1 / city / postal_code (same
+      issue — e2e shows three address fields all filled with the
+      same multi-part string).
 - [ ] **D**   `cdp::Session::fill` + `verify` — write value, dispatch
       input/change events, re-snapshot 250ms later for Workday
       re-render defense.

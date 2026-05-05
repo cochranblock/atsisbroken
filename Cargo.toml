@@ -69,6 +69,7 @@ ratatui        = { version = "0.29", optional = true }
 crossterm      = { version = "0.28", optional = true }
 
 
+
 # ─── DIAMOND RUST BINARY ARCHITECTURE ───────────────────────────────
 # Canonical: https://cochranblock.org/diamond-profile.toml
 #

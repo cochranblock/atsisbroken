@@ -24,15 +24,24 @@ $ cargo check
 
 | Sim | SHA-256 |
 |---|---|
-| 1 | `98867000629cee8ef0a47d122cdd1ecee81e31b614d07469332c95555e46cc58` |
-| 2 | `98867000629cee8ef0a47d122cdd1ecee81e31b614d07469332c95555e46cc58` |
-| 3 | `98867000629cee8ef0a47d122cdd1ecee81e31b614d07469332c95555e46cc58` |
+| 1 | `e497e24316d0641ae196c944a4d200547d348ca4e5fe79a3e0552eb33cf52c01` |
+| 2 | `e497e24316d0641ae196c944a4d200547d348ca4e5fe79a3e0552eb33cf52c01` |
+| 3 | `e497e24316d0641ae196c944a4d200547d348ca4e5fe79a3e0552eb33cf52c01` |
 
-202/202 tests pass on every sim:
-- 175 in `atsisbroken` lib (schemas, queue, bridge, paths, resume,
-  strategy, cdp, tui, **browser_detect**, `is_meaningfully_populated`,
-  `profile_path_with_override`)
+(After `sed 's/finished in [0-9.]*s/finished/'` to strip cargo's
+wall-clock timing from the e2e test result line — the live ATS test
+takes 1.3±0.05 seconds and the variance is harmless.)
+
+220/220 tests pass on every sim:
+- 192 in `atsisbroken` lib (schemas, queue, bridge, paths, resume,
+  strategy, cdp, tui, browser_detect; **+ predict_field_key with 18
+  test cases including a regression for the "tel" inside
+  "websiteLinkedIn" bug caught by the e2e test**)
 -  11 in `atsisbroken` bin
+-   1 in `tests/ats_e2e.rs` — **real chromium spawn against 3 mock
+   ATS fixtures (Greenhouse / Lever / Workday), snapshot via
+   `page.evaluate`, classify, fill, screenshot. Live test catches
+   classifier bugs the unit tests miss.**
 -   9 in `tests/cli_smoke.rs` integration
 -   7 in `atsisbroken-android` lib
 Tautological tests removed; remaining suite is behavioral or schema-

@@ -1,0 +1,47 @@
+# Expected classifier output per fixture. Used by tests/ats_e2e.rs.
+# Each [[fixture]] table lists every form field in the corresponding
+# .html file with its (name|id) selector and the predicted_field_key
+# the Rust classifier should produce. Out-of-vocab fields list ""
+# explicitly — the classifier MUST emit empty (skip), never invent.
+
+[[fixture]]
+file = "greenhouse.html"
+expectations = [
+    { id = "first_name",     expected = "full_name" },
+    { id = "last_name",      expected = "full_name" },
+    { id = "email",          expected = "email" },
+    { id = "phone",          expected = "phone" },
+    { id = "urls_linkedin",  expected = "linkedin" },
+    { id = "urls_github",    expected = "github" },
+    { id = "urls_portfolio", expected = "website" },
+    { id = "visa",           expected = "work_authorization" },
+    { id = "why",            expected = "freetext" },
+    { id = "salary",         expected = "" },
+]
+
+[[fixture]]
+file = "lever.html"
+expectations = [
+    { id = "resume-upload", expected = "full_name" },
+    { id = "email-input",   expected = "email" },
+    { id = "phone-input",   expected = "phone" },
+    { id = "lk",            expected = "linkedin" },
+    { id = "gh",            expected = "github" },
+    { id = "port",          expected = "website" },
+    { id = "cv",            expected = "freetext" },
+    { id = "auth",          expected = "work_authorization" },
+]
+
+[[fixture]]
+file = "workday.html"
+expectations = [
+    { id = "lf",    expected = "full_name" },
+    { id = "ll",    expected = "full_name" },
+    { id = "em",    expected = "email" },
+    { id = "ph",    expected = "phone" },
+    { id = "ad1",   expected = "address" },
+    { id = "ct",    expected = "address" },
+    { id = "zip",   expected = "address" },
+    { id = "wd_lk", expected = "linkedin" },
+    { id = "wa",    expected = "work_authorization" },
+]
