@@ -27,6 +27,12 @@ use serde::{Deserialize, Serialize};
 pub mod bridge;
 pub mod browser_detect;
 pub mod cdp;
+
+/// Re-export of kova's ats_fixtures exopack capability. (The `kova-engine`
+/// package exposes its lib as `kova`, hence the import name.) Used by
+/// `tests/ats_e2e.rs` and (future) the TUI's "diagnose against fixtures"
+/// surface. Sources documented in `docs/ATS_FIXTURE_SOURCES.md`.
+pub use kova::exopack::ats_fixtures;
 pub mod paths;
 pub mod resume;
 pub mod strategy;

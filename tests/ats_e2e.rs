@@ -16,26 +16,8 @@ use atsisbroken::{predict_field_key, profile_value_for_key, FieldDescriptor, Pro
 use chromiumoxide::page::ScreenshotParams;
 use chromiumoxide::Browser;
 use futures::StreamExt;
-use serde::Deserialize;
-use std::path::PathBuf;
+use atsisbroken::ats_fixtures::{self, AtsVendor, FixtureOpts};
 use std::time::Duration;
-
-#[derive(Debug, Deserialize)]
-struct Expected {
-    fixture: Vec<FixtureExpectation>,
-}
-
-#[derive(Debug, Deserialize)]
-struct FixtureExpectation {
-    file: String,
-    expectations: Vec<FieldExpectation>,
-}
-
-#[derive(Debug, Deserialize)]
-struct FieldExpectation {
-    id: String,
-    expected: String,
-}
 
 const SNAPSHOT_JS: &str = r#"
 (() => {
@@ -120,23 +102,30 @@ async fn ats_fixtures_classify_and_fill_correctly() {
     };
     let driver = tokio::spawn(async move { while handler.next().await.is_some() {} });
 
-    let expected_text = std::fs::read_to_string("tests/fixtures/ats/expected.toml")
-        .expect("read expected.toml");
-    let expected: Expected = toml::from_str(&expected_text).expect("parse expected.toml");
     let profile = sample_profile();
-
+    let opts = FixtureOpts::default();
     let cwd = std::env::current_dir().expect("cwd");
     let screenshots_dir = cwd.join("docs/screenshots/ats");
     std::fs::create_dir_all(&screenshots_dir).expect("mkdir screenshots/ats");
 
-    for fx in &expected.fixture {
-        let url = format!(
-            "file://{}",
-            cwd.join("tests/fixtures/ats").join(&fx.file).display()
+    let vendors = [
+        AtsVendor::Greenhouse,
+        AtsVendor::Lever,
+        AtsVendor::Workday,
+        AtsVendor::Icims,
+        AtsVendor::Ashby,
+    ];
+
+    for vendor in vendors {
+        eprintln!("--- vendor: {}", vendor.label());
+        let html = ats_fixtures::render(vendor, &opts);
+        // Use a data: URL so the browser parses inline HTML — no
+        // file I/O required, and the fixture stays a pure string.
+        let data_url = format!(
+            "data:text/html;base64,{}",
+            data_url_base64_encode(&html)
         );
-        eprintln!("--- fixture: {}", fx.file);
-        let page = browser.new_page(&url).await.expect("new_page");
-        // Tiny settle for layout / inline DOM.
+        let page = browser.new_page(&data_url).await.expect("new_page");
         tokio::time::sleep(Duration::from_millis(250)).await;
 
         let descriptors_json = page
@@ -158,22 +147,23 @@ async fn ats_fixtures_classify_and_fill_correctly() {
             }
         }
 
-        // Assert each expected (id, expected_key) matches predicted.
-        for ex in &fx.expectations {
+        // Assert each (id, expected_key) pair from the kova capability.
+        let expected = ats_fixtures::expected_keys(vendor, &opts);
+        for (id, expected_key) in &expected {
             let got = predicted_by_id
-                .get(&ex.id)
+                .get(id)
                 .cloned()
                 .unwrap_or_else(|| "<missing>".into());
             assert_eq!(
-                got, ex.expected,
-                "fixture {} field id={}: predicted {got:?}, expected {:?}",
-                fx.file, ex.id, ex.expected
+                got, *expected_key,
+                "vendor {} field id={}: predicted {got:?}, expected {:?}",
+                vendor.label(),
+                id,
+                expected_key
             );
         }
 
-        // Fill every field that has a non-empty predicted key with a
-        // matching profile value. (Skip "freetext" and "" — those don't
-        // come from the structured profile.)
+        // Fill every field with a non-empty matching profile value.
         let mut filled = 0;
         for d in &descriptors {
             let key = predict_field_key(d);
@@ -187,9 +177,7 @@ async fn ats_fixtures_classify_and_fill_correctly() {
             }
         }
 
-        // Save screenshot of the filled form.
-        let vendor = fx.file.trim_end_matches(".html");
-        let out = screenshots_dir.join(format!("{vendor}.png"));
+        let out = screenshots_dir.join(format!("{}.png", vendor.label()));
         page.save_screenshot(
             ScreenshotParams::builder()
                 .format(chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat::Png)
@@ -204,4 +192,34 @@ async fn ats_fixtures_classify_and_fill_correctly() {
 
     drop(browser);
     driver.abort();
+}
+
+fn data_url_base64_encode(s: &str) -> String {
+    // Tiny base64 encoder so we don't pull in a dep just for tests.
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let bytes = s.as_bytes();
+    let mut out = String::new();
+    let mut i = 0;
+    while i + 3 <= bytes.len() {
+        let n = ((bytes[i] as u32) << 16) | ((bytes[i + 1] as u32) << 8) | bytes[i + 2] as u32;
+        out.push(TABLE[((n >> 18) & 63) as usize] as char);
+        out.push(TABLE[((n >> 12) & 63) as usize] as char);
+        out.push(TABLE[((n >> 6) & 63) as usize] as char);
+        out.push(TABLE[(n & 63) as usize] as char);
+        i += 3;
+    }
+    let rem = bytes.len() - i;
+    if rem == 1 {
+        let n = (bytes[i] as u32) << 16;
+        out.push(TABLE[((n >> 18) & 63) as usize] as char);
+        out.push(TABLE[((n >> 12) & 63) as usize] as char);
+        out.push_str("==");
+    } else if rem == 2 {
+        let n = ((bytes[i] as u32) << 16) | ((bytes[i + 1] as u32) << 8);
+        out.push(TABLE[((n >> 18) & 63) as usize] as char);
+        out.push(TABLE[((n >> 12) & 63) as usize] as char);
+        out.push(TABLE[((n >> 6) & 63) as usize] as char);
+        out.push('=');
+    }
+    out
 }

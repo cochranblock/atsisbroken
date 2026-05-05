@@ -51,7 +51,7 @@ tui = ["dep:ratatui", "dep:crossterm"]
 # The Cochran Block, LLC crates (paths; swap to crates.io or git when published).
 # kova-engine: inference loader + tokenization. We do NOT use its bundled
 # model story — atsisbroken's models are user-trained, not author-shipped.
-kova-engine    = { path = "../kova", default-features = false, features = ["inference"] }
+kova-engine    = { path = "../kova", default-features = false, features = ["inference", "ats_fixtures"] }
 # Chromium DevTools Protocol client. Pure Rust. No JS toolchain, no extension store.
 chromiumoxide  = { version = "0.7", default-features = false, features = ["tokio-runtime"] }
 # Async runtime for the CDP client + trainer + inference loop.
