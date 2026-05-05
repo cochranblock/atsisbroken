@@ -86,6 +86,7 @@ Topic-specific (in `docs/`):
 - [`docs/PLAN_PROFILE_AND_GITHUB.md`](docs/PLAN_PROFILE_AND_GITHUB.md) — expanded ~75-field schema + GitHub inventory + verbatim-source free-form answers + user-defined regex hooks
 - [`docs/ATS_FIXTURE_SOURCES.md`](docs/ATS_FIXTURE_SOURCES.md) — sources for the 5 vendor fixture renderers (Greenhouse / Lever / Workday / iCIMS / Ashby), with author attribution
 - [`docs/PERFECTION_PLAN.md`](docs/PERFECTION_PLAN.md) — research-driven path to 1.0 (vendor census → DOM capture → accuracy benchmark → trained classifier → multi-page Workday → anti-bot → legal → interviews → beta)
+- [`docs/research/ATS_MARKET_SHARE_2026Q2.md`](docs/research/ATS_MARKET_SHARE_2026Q2.md) — R1 results. Ashby 49% / Greenhouse 30% / Workday 0.9% in HN-startup cohort (HN-biased; broader sample needed)
 - [`docs/HIRING_MANAGER_ANALYSIS.md`](docs/HIRING_MANAGER_ANALYSIS.md) — HM personas + AI-detection heuristics + "explainability" property
 - [`docs/WHY_NO_ONE_IS_BUILDING_THIS.md`](docs/WHY_NO_ONE_IS_BUILDING_THIS.md) — honest market analysis: SaaS LTV inversion, engineering cost, Cochran Block's unfair advantage
 - [`docs/TRAINING_DATA.md`](docs/TRAINING_DATA.md) — responsibly-sourced data tiers

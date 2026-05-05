@@ -7,8 +7,17 @@ as they ship. Order under each section reflects priority.
 
 R-phases gate everything else. No ship until these close.
 
-- [ ] **R1**  ATS market census — sample 200+ public job postings,
-      classify by host, plot vendor share. Tells us where to focus.
+- [x] **R1 (HN cohort)**  ATS market census — 683 URLs from 300
+      comments in HN's "Who is hiring? (May 2026)" thread,
+      classified by host. Result: Ashby 49% / Greenhouse 30% /
+      Lever 5% / Workable 4% / others; Workday only 0.9% (HN
+      is startup-biased). Full report:
+      `docs/research/ATS_MARKET_SHARE_2026Q2.md`.
+      **Decision triggered:** promote Ashby fixture from C → A
+      BEFORE the Workday wizard (R5).
+- [ ] **R1-broader**  Re-run R1 against Indeed top-search /
+      LinkedIn jobs / USAJOBS to get F500 distribution. HN
+      sample alone misses Workday/iCIMS/Taleo/SuccessFactors.
 - [ ] **R2**  Real DOM capture — `Page.captureSnapshot` MHTMLs of
       3-5 public postings per top vendor. Hand-label each field
       with expected classifier key. Replaces inferred fixtures.
