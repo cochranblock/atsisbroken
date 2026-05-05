@@ -22,8 +22,8 @@
 //! the submit button — the function exits after fill+screenshot+report.
 
 use crate::{
-    paths, predict_field_key, profile_value_for_key, version, Feedback, FeedbackQueue,
-    FieldDescriptor, Profile,
+    config::Config, paths, predict_field_key_with_confidence, profile_value_for_key, version,
+    ConfidenceThreshold, Feedback, FeedbackQueue, FieldDescriptor, Mode, Profile,
 };
 use anyhow::{Context, Result};
 use chromiumoxide::page::ScreenshotParams;
@@ -60,6 +60,72 @@ const SNAPSHOT_JS: &str = r#"
     return out;
 })()
 "#;
+
+/// Per-field decision — pure function, no I/O. The run loop applies
+/// it to every snapshotted field and dispatches accordingly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FillDecision {
+    /// Skip — either the classifier returned unknown, or there's no
+    /// matching profile value, or (in Shadow) confidence was below
+    /// threshold.
+    Skip { reason: SkipReason },
+    /// Fill the field outright (Chaos mode, or Shadow above threshold).
+    Fill,
+    /// Ask the user yes/no per field (TrainingWheels mode).
+    Prompt,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkipReason {
+    /// Classifier returned `unknown` or empty key.
+    NotClassified,
+    /// Field key was classified but profile has no value for it
+    /// (e.g. user didn't fill in `linkedin`).
+    NoProfileValue,
+    /// Field has no DOM id, so we can't reliably target it.
+    NoDomId,
+    /// Shadow mode: classifier confidence below threshold.
+    BelowConfidenceThreshold,
+}
+
+/// Apply the autonomy-mode policy to one field. Pure; no I/O.
+pub fn decide(
+    mode: Mode,
+    key: &str,
+    confidence: f32,
+    threshold: ConfidenceThreshold,
+    has_profile_value: bool,
+    has_dom_id: bool,
+) -> FillDecision {
+    if key.is_empty() {
+        return FillDecision::Skip {
+            reason: SkipReason::NotClassified,
+        };
+    }
+    if !has_profile_value {
+        return FillDecision::Skip {
+            reason: SkipReason::NoProfileValue,
+        };
+    }
+    if !has_dom_id {
+        return FillDecision::Skip {
+            reason: SkipReason::NoDomId,
+        };
+    }
+    match mode {
+        Mode::TrainingWheels => FillDecision::Prompt,
+        Mode::Shadow => {
+            if threshold.passes(confidence) {
+                FillDecision::Fill
+            } else {
+                FillDecision::Skip {
+                    reason: SkipReason::BelowConfidenceThreshold,
+                }
+            }
+        }
+        Mode::Chaos => FillDecision::Fill,
+    }
+}
 
 /// JS template — fill one field by id and dispatch React-friendly events.
 fn fill_js(id: &str, value: &str) -> String {
@@ -125,9 +191,6 @@ async fn run_inner(
     screenshot_dir: Option<&Path>,
 ) -> Result<RunSummary> {
     let page = browser.new_page(url).await.context("new_page")?;
-    // 1.5s for hydration; sufficient for static forms and the kova
-    // ats_fixtures generators. Multi-page wizards need wait_for_navigation
-    // hooks added per-vendor later.
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
     let snap = page
@@ -139,28 +202,41 @@ async fn run_inner(
     let descriptors: Vec<FieldDescriptor> =
         serde_json::from_value(snap).context("snapshot deserialize")?;
 
+    let cfg = Config::load().unwrap_or_default();
+    eprintln!(
+        "  mode: {:?}{}",
+        cfg.mode,
+        if cfg.mode == Mode::Shadow {
+            format!(" (confidence threshold: {:.2})", cfg.confidence_threshold.0)
+        } else {
+            String::new()
+        }
+    );
+
     let mut filled = 0usize;
     let mut skipped = 0usize;
+    let mut prompted = 0usize;
     let mut feedback_events: Vec<Feedback> = Vec::new();
 
     for d in &descriptors {
-        let key = predict_field_key(d);
-        let profile_value = profile_value_for_key(profile, key);
-        match (key, profile_value) {
-            ("", _) | (_, None) => {
+        let (key, confidence) = predict_field_key_with_confidence(d);
+        let value = profile_value_for_key(profile, key);
+        let decision = decide(
+            cfg.mode,
+            key,
+            confidence,
+            cfg.confidence_threshold,
+            value.is_some(),
+            !d.id.is_empty(),
+        );
+        match decision {
+            FillDecision::Skip { .. } => {
                 skipped += 1;
             }
-            (key, Some(value)) => {
-                if d.id.is_empty() {
-                    skipped += 1;
-                    continue;
-                }
-                let _ = page.evaluate(fill_js(&d.id, value)).await;
+            FillDecision::Fill => {
+                let v = value.expect("decide returned Fill ⇒ value present");
+                let _ = page.evaluate(fill_js(&d.id, v)).await;
                 filled += 1;
-                // Record the fill as a positive observation. The user
-                // hasn't confirmed yet (TrainingWheels would prompt; we
-                // aren't there yet) but the CLI surfaces the summary
-                // and the queue is the audit trail.
                 feedback_events.push(Feedback {
                     field: d.clone(),
                     predicted: key.to_string(),
@@ -168,8 +244,31 @@ async fn run_inner(
                     accepted: true,
                 });
             }
+            FillDecision::Prompt => {
+                let v = value.expect("decide returned Prompt ⇒ value present");
+                prompted += 1;
+                if prompt_user(&d.label, key, v)? {
+                    let _ = page.evaluate(fill_js(&d.id, v)).await;
+                    filled += 1;
+                    feedback_events.push(Feedback {
+                        field: d.clone(),
+                        predicted: key.to_string(),
+                        actual: key.to_string(),
+                        accepted: true,
+                    });
+                } else {
+                    skipped += 1;
+                    feedback_events.push(Feedback {
+                        field: d.clone(),
+                        predicted: key.to_string(),
+                        actual: String::new(), // user rejected
+                        accepted: false,
+                    });
+                }
+            }
         }
     }
+    let _ = prompted; // retained for future summary surface
 
     let screenshot_path = if let Some(dir) = screenshot_dir {
         std::fs::create_dir_all(dir).context("mkdir screenshot dir")?;
@@ -202,6 +301,25 @@ async fn run_inner(
         screenshot_path,
         feedback_events,
     })
+}
+
+/// TrainingWheels prompt: ask the user yes/no per field on stderr +
+/// stdin. Returns true on yes, false on no/empty/garbage. Designed
+/// for terminal use; TUI integration will route through a different
+/// surface later.
+fn prompt_user(label: &str, key: &str, value: &str) -> Result<bool> {
+    use std::io::{BufRead, Write};
+    eprint!(
+        "  field {label:?} → {key} = {value:?} — fill? [y/N] ",
+        label = label,
+        key = key,
+        value = value
+    );
+    std::io::stderr().flush().ok();
+    let mut line = String::new();
+    std::io::stdin().lock().read_line(&mut line)?;
+    let answer = line.trim().to_ascii_lowercase();
+    Ok(answer == "y" || answer == "yes")
 }
 
 /// Append the run's feedback events to the persistent queue at the
@@ -282,6 +400,108 @@ mod tests {
         let out = format_summary(&s, 0);
         assert!(out.contains("NOT submitted"));
         assert!(out.contains("review"));
+    }
+
+    // ─── decide ───────────────────────────────────────────────────────
+
+    fn t() -> ConfidenceThreshold {
+        ConfidenceThreshold(0.85)
+    }
+
+    #[test]
+    fn decide_skip_when_classifier_returns_unknown() {
+        let d = decide(Mode::Chaos, "", 0.0, t(), true, true);
+        assert_eq!(
+            d,
+            FillDecision::Skip {
+                reason: SkipReason::NotClassified
+            }
+        );
+    }
+
+    #[test]
+    fn decide_skip_when_no_profile_value() {
+        let d = decide(Mode::Chaos, "linkedin", 1.0, t(), false, true);
+        assert_eq!(
+            d,
+            FillDecision::Skip {
+                reason: SkipReason::NoProfileValue
+            }
+        );
+    }
+
+    #[test]
+    fn decide_skip_when_no_dom_id() {
+        let d = decide(Mode::Chaos, "email", 1.0, t(), true, false);
+        assert_eq!(
+            d,
+            FillDecision::Skip {
+                reason: SkipReason::NoDomId
+            }
+        );
+    }
+
+    #[test]
+    fn decide_chaos_fills_classified_field() {
+        let d = decide(Mode::Chaos, "email", 1.0, t(), true, true);
+        assert_eq!(d, FillDecision::Fill);
+    }
+
+    #[test]
+    fn decide_training_wheels_always_prompts_classified_fields() {
+        let d = decide(Mode::TrainingWheels, "email", 1.0, t(), true, true);
+        assert_eq!(d, FillDecision::Prompt);
+    }
+
+    #[test]
+    fn decide_shadow_fills_above_threshold() {
+        let d = decide(Mode::Shadow, "email", 0.90, t(), true, true);
+        assert_eq!(d, FillDecision::Fill);
+    }
+
+    #[test]
+    fn decide_shadow_fills_at_threshold() {
+        // Property: threshold is inclusive (>=). Catches accidental
+        // > → >= flip in `ConfidenceThreshold::passes`.
+        let d = decide(Mode::Shadow, "email", 0.85, t(), true, true);
+        assert_eq!(d, FillDecision::Fill);
+    }
+
+    #[test]
+    fn decide_shadow_skips_below_threshold() {
+        let d = decide(Mode::Shadow, "email", 0.84, t(), true, true);
+        assert_eq!(
+            d,
+            FillDecision::Skip {
+                reason: SkipReason::BelowConfidenceThreshold
+            }
+        );
+    }
+
+    #[test]
+    fn decide_skip_precedence_unknown_beats_threshold() {
+        // If the field can't be classified at all, it doesn't matter
+        // what mode/threshold says. NotClassified wins.
+        let d = decide(Mode::Shadow, "", 1.0, t(), true, true);
+        assert_eq!(
+            d,
+            FillDecision::Skip {
+                reason: SkipReason::NotClassified
+            }
+        );
+    }
+
+    #[test]
+    fn decide_skip_precedence_no_value_beats_prompt() {
+        // TrainingWheels would normally Prompt, but if the user has
+        // no value to fill we skip rather than prompt for nothing.
+        let d = decide(Mode::TrainingWheels, "linkedin", 1.0, t(), false, true);
+        assert_eq!(
+            d,
+            FillDecision::Skip {
+                reason: SkipReason::NoProfileValue
+            }
+        );
     }
 
     #[test]

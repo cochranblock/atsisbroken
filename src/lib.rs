@@ -363,6 +363,17 @@ pub fn predict_field_key(f: &FieldDescriptor) -> &'static str {
     ""
 }
 
+/// Like `predict_field_key`, but also returns a confidence score in
+/// [0.0, 1.0]. The keyword classifier is binary — either it matched
+/// a vocabulary entry (1.0) or it didn't (0.0). When the trained
+/// classifier (R4) lands, this signature stays stable; only the
+/// implementation changes. Shadow-mode threshold gating reads this.
+pub fn predict_field_key_with_confidence(f: &FieldDescriptor) -> (&'static str, f32) {
+    let key = predict_field_key(f);
+    let confidence = if key.is_empty() { 0.0 } else { 1.0 };
+    (key, confidence)
+}
+
 /// Resolve a classified key to the value the user has in their profile.
 /// Returns `None` for unknown / freetext / fields not in the schema.
 pub fn profile_value_for_key<'a>(profile: &'a Profile, key: &str) -> Option<&'a str> {
@@ -841,6 +852,24 @@ mod tests {
             predict_field_key(&fd("Contact name", "name@email.com", "", "", "", "text")),
             "email"
         );
+    }
+
+    #[test]
+    fn predict_with_confidence_returns_one_for_known() {
+        let (key, conf) = predict_field_key_with_confidence(
+            &fd("Email", "", "", "", "", "email"),
+        );
+        assert_eq!(key, "email");
+        assert_eq!(conf, 1.0);
+    }
+
+    #[test]
+    fn predict_with_confidence_returns_zero_for_unknown() {
+        let (key, conf) = predict_field_key_with_confidence(
+            &fd("How many siblings?", "", "", "", "", "number"),
+        );
+        assert_eq!(key, "");
+        assert_eq!(conf, 0.0);
     }
 
     #[test]
