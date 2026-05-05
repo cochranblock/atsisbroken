@@ -440,46 +440,223 @@ R8, R10.
 
 ---
 
-## 14. Sequencing
+## 14. Sequencing — walkthrough
 
-```
-                  R1 (vendor census)
-                        │
-                        ▼
-                  R2 (DOM capture)
-                       ╱    ╲
-                      ▼      ▼
-              R3 (accuracy)   R7 (demographics audit)
-                  │
-            ┌─────┴─────┐
-            ▼           ▼
-      R4 (real model) [if R3 < 98%]
-            │
-            └─────┬─────┐
-                  ▼     ▼
-              R5 (Workday wizard)
-                  │
-                  ▼
-              R6 (anti-bot)
-                  │
-                  ▼
-              R9 (legal review)
-                  │
-                  ▼
-              R10 (interviews) ─── parallel with R6/R9
-                  │
-                  ▼
-              R11 (beta cohort) ─── after R3 + R5 + R7 ship
-                  │
-                  ▼
-              ── ship 1.0 ──
-                  │
-                  ▼
-              R8 (selector decay monitoring) — ongoing forever
-```
+The order isn't arbitrary. Each phase unblocks specific later
+phases or eliminates a class of risk that would corrupt later
+measurements. Walking through it:
 
-Total: ~3 weeks of research-and-build before 1.0 candidate.
+### Step 1 — R1 (market census). Why first?
+
+**Cheapest phase, sets focus.** Until we know that Workday is N% of
+real US engineering job applications and Ashby is M%, we're guessing
+at vendor priority. R1 takes a day; saves weeks of mis-investment.
+
+**What it unblocks:** R2 (we capture the vendors we found), R5
+(if R1 says Workday isn't dominant, we don't deepen it first).
+
+**What kills it:** sample bias. Hacker News + LinkedIn aren't a
+random sample of all jobs. We document the bias.
+
+### Step 2 — R9 (legal / ToS review). Why second, parallel to R1?
+
+**Capture is a legal action.** R2 wants to `Page.captureSnapshot`
+real public postings. Most ToS forbid scraping. We need to read
+each vendor's terms BEFORE we hit their pages, even read-only,
+even publicly accessible.
+
+**Why parallel to R1:** legal review is wallclock-bound by
+counsel-availability, not by what we know about the market.
+Start it early; results land alongside R1 closing.
+
+**What it unblocks:** R2 capture protocol (which vendors? how?
+attribution?), R11 beta launch (do we need a usage agreement?).
+
+**What kills it:** finding a hard ToS prohibition we can't work
+around. If a vendor blocks user-controlled CDP-driven autofill in
+their ToS (none currently do, per surveyed work), we either
+exclude that vendor or get explicit permission.
+
+### Step 3 — R2 (real DOM capture). Why third?
+
+**The empirical foundation.** Every later research phase
+(R3 accuracy, R5 wizard, R6 anti-bot, R7 demographics, R8 decay)
+queries against R2's captures. Without R2, every later phase is
+back to inference.
+
+**Gated by R1+R9:** R1 tells us *which* vendors to capture; R9
+tells us we can.
+
+**What it unblocks:** literally everything downstream.
+
+**What kills it:** rate-limiting / Cloudflare blocks on capture.
+If a vendor blocks us, we use Wayback Machine snapshots as a
+secondary source; document confidence drop.
+
+### Step 4 — R7 (demographics audit). Why immediately after R2?
+
+**Trust-critical regression.** Demographics fields are the one
+class of error that turns into a lawsuit. If our classifier
+ever auto-fills "race" or "veteran_status," we're done.
+R7 establishes the regression test before any other phase
+touches the classifier — so any future change must keep this
+property.
+
+**Why before R3:** R3 might cause us to retrain (R4); we want
+the demographics-skip property pinned before retraining could
+accidentally violate it.
+
+**What it unblocks:** R4 (the trained classifier inherits the
+guardrail).
+
+**What kills it:** finding the classifier *does* mis-classify a
+demographics field. That's the bug R7 catches early.
+
+### Step 5 — R3 (classifier accuracy benchmark). Why fifth?
+
+**Decision gate for R4.** Run the existing keyword classifier
+against R2 captures, measure per-vendor accuracy. Two outcomes:
+
+- **≥98% on canonical fields:** we ship the keyword classifier;
+  R4 deferred forever (or until accuracy drifts).
+- **<98%:** R4 is mandatory.
+
+**Why before R5/R6:** if we're going to retrain (R4), the trained
+classifier needs to be in place before we deepen the Workday
+fixture (R5) and run anti-bot tests (R6) — those phases query
+the classifier during their own measurements.
+
+**What it unblocks:** R4 (conditional), R5+R6 (always).
+
+### Step 6 — R4 (train real classifier). Why sixth, conditional?
+
+**Triggered by R3.** This is the heavy phase — feature engineering
++ training pipeline + online updater. ~4 days. We only do it if
+R3 demands it.
+
+**Why not before R3:** retraining without measurement is
+cargo-culting. The classifier *might* already be good enough.
+Measure first.
+
+**What it unblocks:** R5 + R11 (beta needs a model that won't
+embarrass us).
+
+**What kills it:** model size > 500 KB or inference >100 ms —
+we'd need to drop features. Document and try again.
+
+### Step 7 — R5 (Workday multi-page wizard). Why seventh?
+
+**Most-common-vendor depth.** R1 likely confirms Workday is the
+single biggest vendor. Today our fixture renders 1 of 4 wizard
+pages. R5 closes that gap so the e2e covers a real Workday flow,
+not just contact-info.
+
+**Why after R3/R4:** the trained classifier needs to handle the
+wizard's later pages (experience / voluntary disclosures / self-id)
+which have field shapes the contact-info page doesn't cover. Train
+first, deepen second.
+
+**What it unblocks:** R7 demographics audit can now run against the
+voluntary-disclosures and self-identification pages, not just
+contact-info.
+
+### Step 8 — R6 (anti-bot fingerprint research). Why eighth?
+
+**Survive real production.** Once we have a trained classifier
+(R4) and a multi-page Workday flow (R5), we're ready to test
+against real public postings (read-only). R6 is where we discover
+which automation signals these vendors flag and which we mitigate.
+
+**Why after R5:** R5 gives us a multi-step flow to test
+fingerprint persistence across navigation — single-page testing
+misses nav-time signals.
+
+**Why parallel-able with R10:** R6 is engineering; R10 is human
+research. They share no resources.
+
+**What it unblocks:** safer beta (R11).
+
+**What kills it:** finding fingerprints we can't ethically mitigate
+(e.g., a vendor that requires legitimately-human canvas hashing).
+We document the limit and accept the per-vendor failure mode.
+
+### Step 9 — R10 (recruiter interviews). Why parallel from Step 7+?
+
+**Wallclock-bound, content-independent.** Scheduling 5-10 real
+recruiters takes 1-2 weeks regardless of where we are in
+engineering. Start it as soon as R5 begins so it lands by R11.
+
+**Why not earlier:** the questions we ask are sharper if we have
+real captures (R2) to show recruiters — "look at this Workday
+form, here's how our tool would fill it, what jumps out as
+AI-flavored?"
+
+**What it unblocks:** real quotes in `HIRING_MANAGER_ANALYSIS.md`.
+R10 is the only phase that produces *primary research* — every
+other phase is technical measurement.
+
+### Step 10 — R8 (selector decay monitoring). Why tenth?
+
+**Maintenance infrastructure.** Once R2 is stable, R8 stands up
+the GitHub Action that re-captures the same postings monthly and
+diffs against baselines. Selectors decay slowly; we need to know
+when they decay so we can update fixtures before users notice.
+
+**Why so late:** R8 is *ongoing* infrastructure, not a one-shot.
+We need stable baselines (R2 stable) before we can monitor decay.
+
+**What it unblocks:** post-1.0 reliability.
+
+### Step 11 — R11 (beta cohort). Why last?
+
+**The honest gate.** R3 says the classifier works. R5 says the
+fixture covers Workday. R7 says we won't auto-fill demographics.
+R6 says we survive anti-bot. R9 says we're not committing torts.
+R10 says recruiters won't reject our outputs.
+
+R11 is where 20-50 real applicants run the tool against real
+postings (read-only — no actual submissions auto-clicked) and we
+measure: install funnel completion, mode-graduation timing,
+per-vendor success rate, classifier corrections per session.
+
+**What it unblocks:** 1.0 release decision. Beta numbers either
+support the §1 targets or they don't.
+
+**What kills it:** install funnel collapses (Native Messaging
+manifest is too hard for non-technical users) or per-vendor
+success <80% (classifier or fixtures are wrong somewhere R3
+didn't catch).
+
+---
+
+### Total wallclock estimate
+
+- R1: 1 day
+- R9: 2 days (calendar; lawyer-bound)
+- R2: 3 days (after R1 closes)
+- R7: 1 day (after R2 closes)
+- R3: 2 days (after R2 closes)
+- R4: 4 days (gated on R3 < 98%)
+- R5: 2 days
+- R6: 3 days
+- R10: 5-10 days (calendar; recruiter-bound; runs parallel)
+- R8: 1 day to scaffold, ongoing
+- R11: 14 days (calendar; beta cohort)
+
+Critical path: R1 → R2 → R3 → R4 → R5 → R6 → R11 = ~30 days.
+With R9 and R10 running parallel: ~30 days total.
+
 **No shipping under that bar.**
+
+```
+Week 1: R1 (1d) → R9 begins (legal, async) → R2 begins (3d) → R7 (1d)
+Week 2: R3 (2d) → R4 if needed (4d) → R10 begins (recruiter outreach)
+Week 3: R5 (2d) → R6 (3d) → R8 stands up
+Week 4: R11 beta launch → instrument → analyze
+```
+
+R8 (decay monitoring) starts running on day 1 of week 3 and never
+stops.
 
 ---
 
