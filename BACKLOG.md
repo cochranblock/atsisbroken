@@ -3,6 +3,42 @@
 Live working list. Items get moved to `## Done` (with the commit hash)
 as they ship. Order under each section reflects priority.
 
+## Now — Research debt (see `docs/PERFECTION_PLAN.md`)
+
+R-phases gate everything else. No ship until these close.
+
+- [ ] **R1**  ATS market census — sample 200+ public job postings,
+      classify by host, plot vendor share. Tells us where to focus.
+- [ ] **R2**  Real DOM capture — `Page.captureSnapshot` MHTMLs of
+      3-5 public postings per top vendor. Hand-label each field
+      with expected classifier key. Replaces inferred fixtures.
+- [ ] **R3**  Classifier accuracy benchmark — run `predict_field_key`
+      against the R2 capture set. Measure per-vendor %. If <98%,
+      triggers R4.
+- [ ] **R4**  Train logistic-regression classifier — gated on R3
+      result. Chromium autofill heuristics corpus + R2 captures
+      + USAJOBS templates. Online SGD updater.
+- [ ] **R5**  Multi-page Workday wizard — render
+      myExperiencePage / voluntaryDisclosuresPage /
+      selfIdentificationPage; e2e advances through with the
+      `bottom-navigation-next-button`.
+- [ ] **R6**  Anti-bot fingerprint research — what each vendor
+      flags + what we mitigate (no CAPTCHA solving, no human-fake).
+- [ ] **R7**  Demographics field safety audit — regression test
+      that classifier returns "unknown" on every EEO/AAP field
+      across all R2 captures. CRITICAL for trust.
+- [ ] **R8**  Selector decay monitoring — Wayback Machine baselines
+      + monthly GitHub Action that pages on drift.
+- [ ] **R9**  Legal / ToS review per vendor — written analysis
+      reviewed by counsel before public 1.0.
+- [ ] **R10** Hiring manager interviews — 5-10 real recruiters,
+      30-min structured. Replaces inferred quotes in
+      `HIRING_MANAGER_ANALYSIS.md`.
+- [ ] **R11** Beta cohort — opt-in 20-50 users; instrumented
+      install funnel + per-vendor success rate + corrections.
+
+After R3 + R5 + R7 close: 1.0 candidate.
+
 ## Now — Browser Automation cluster (see `docs/PLAN_BROWSER_AUTOMATION.md`)
 
 - [x] **A**   `browser_detect::default_browser()` — xdg-settings (Linux),
