@@ -94,8 +94,18 @@ enum Cmd {
         #[arg(long, default_value_t = 32)]
         height: u16,
     },
-    /// Take off the training wheels. Subsequent `run`s fill autonomously.
-    Graduate,
+    /// Advance one rung up the autonomy ladder
+    /// (TrainingWheels → Shadow → Chaos). Persists to
+    /// `~/.atsisbroken/config.toml`. Prompts for confirmation
+    /// unless `--yes`.
+    Graduate {
+        /// Skip the confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+        /// Step backward (Chaos → Shadow → TrainingWheels) instead.
+        #[arg(long)]
+        back: bool,
+    },
     /// Drain the local feedback queue if delivery is configured and the
     /// network is reachable. Otherwise no-op. Always safe to run offline.
     Sync,
@@ -145,7 +155,7 @@ async fn main() -> Result<()> {
         Some(Cmd::Copy { key }) => cmd_copy(key, profile_override).await,
         Some(Cmd::Speak) => cmd_speak(profile_override).await,
         Some(Cmd::CdpProbe) => cmd_cdp_probe().await,
-        Some(Cmd::Graduate) => cmd_graduate().await,
+        Some(Cmd::Graduate { yes, back }) => cmd_graduate(yes, back).await,
         Some(Cmd::Sync) => cmd_sync().await,
         Some(Cmd::Export { out }) => cmd_export(out).await,
         Some(Cmd::Bridge) => cmd_bridge().await,
@@ -493,10 +503,62 @@ mod tests {
     }
 }
 
-async fn cmd_graduate() -> Result<()> {
+async fn cmd_graduate(yes: bool, back: bool) -> Result<()> {
+    use atsisbroken::config::Config;
+    use std::io::BufRead;
+
+    let mut cfg = Config::load().context("load config")?;
+    let current = cfg.mode;
+    let target = if back {
+        match current {
+            Mode::Chaos => Mode::Shadow,
+            Mode::Shadow => Mode::TrainingWheels,
+            Mode::TrainingWheels => {
+                return Err(anyhow!(
+                    "already at TrainingWheels — already the most supervised mode"
+                ));
+            }
+        }
+    } else {
+        match current {
+            Mode::TrainingWheels => Mode::Shadow,
+            Mode::Shadow => Mode::Chaos,
+            Mode::Chaos => {
+                return Err(anyhow!(
+                    "already at Chaos — pass --back to step down"
+                ));
+            }
+        }
+    };
+
     eprintln!(
-        "atsisbroken {} — graduate: Mode flip not yet wired (Phase 4)",
-        version()
+        "atsisbroken {} — current mode: {:?} → target mode: {:?}",
+        version(),
+        current,
+        target
+    );
+    if !yes {
+        eprint!("  proceed? [y/N] ");
+        let _ = std::io::Write::flush(&mut std::io::stderr());
+        let mut line = String::new();
+        std::io::stdin().lock().read_line(&mut line)?;
+        let answer = line.trim().to_ascii_lowercase();
+        if !(answer == "y" || answer == "yes") {
+            eprintln!("  cancelled. mode unchanged.");
+            return Ok(());
+        }
+    }
+
+    if back {
+        cfg.step_back().map_err(|e| anyhow!("{e}"))?;
+    } else {
+        cfg.graduate().map_err(|e| anyhow!("{e}"))?;
+    }
+    paths::ensure_dir()?;
+    cfg.save().context("save config")?;
+    eprintln!(
+        "  ✓ mode persisted to {}",
+        paths::config_path().display()
     );
     Ok(())
 }
@@ -597,9 +659,15 @@ async fn cmd_status(profile_override: Option<std::path::PathBuf>) -> Result<()> 
         0
     };
     let detected = atsisbroken::browser_detect::default_browser();
+    let cfg = atsisbroken::config::Config::load().unwrap_or_default();
     println!("atsisbroken {}", version());
     println!("seed corpus fingerprint: {:08x}", seed_corpus_fingerprint());
-    println!("default mode: {:?}", Mode::default());
+    println!("mode: {:?}", cfg.mode);
+    if cfg.mode == Mode::default() && !paths::config_path().exists() {
+        println!("  (default — never run `atsisbroken graduate`)");
+    } else {
+        println!("  (persisted in {})", paths::config_path().display());
+    }
     println!("profile path: {}", profile_path.display());
     let init_state = if !exists {
         "no — run `atsisbroken init`"

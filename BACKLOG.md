@@ -100,8 +100,10 @@ After R3 + R5 + R7 close: 1.0 candidate.
 
 ## Now — other
 
-- [ ] `atsisbroken graduate` — confirmation prompt + flip mode in
-      `~/.atsisbroken/config.toml`.
+- [x] `atsisbroken graduate` — confirmation prompt + flip mode in
+      `~/.atsisbroken/config.toml`. `--yes` skips prompt; `--back`
+      steps backward (Chaos → Shadow → TrainingWheels). Refuses at
+      either end with actionable error. Smoke-verified end-to-end.
 - [ ] `atsisbroken sync-config --destination ...` — toggle
       `FeedbackDelivery::SendWhenOnline`.
 - [ ] `atsisbroken status` — show *current* mode (not just default)
