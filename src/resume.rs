@@ -35,7 +35,19 @@ pub fn parse_resume(text: &str) -> Profile {
         p.website = site;
     }
     if let Some(name) = find_name(text, &p.email, &p.phone) {
-        p.full_name = name;
+        // Split on whitespace: last token = last_name, everything
+        // before = first_name. "Jane Q. Doe" → first="Jane Q.",
+        // last="Doe". One-word names ("Jane") set full_name only —
+        // first/last stay empty (avoids dropping the user's whole
+        // name into a "Last name" field).
+        let parts: Vec<&str> = name.split_whitespace().collect();
+        p.full_name = name.clone();
+        if let [head @ .., last] = parts.as_slice() {
+            if !head.is_empty() {
+                p.last_name = last.to_string();
+                p.first_name = head.join(" ");
+            }
+        }
     }
 
     p

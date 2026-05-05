@@ -61,18 +61,19 @@ const SNAPSHOT_JS: &str = r#"
 })()
 "#;
 
-/// Per-field decision — pure function, no I/O. The run loop applies
-/// it to every snapshotted field and dispatches accordingly.
+/// Per-field decision — pure function, no I/O. Each variant carries
+/// what the caller needs; no `.expect()` at the call site, the type
+/// system enforces "if you got `Fill`, you have a value."
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FillDecision {
-    /// Skip — either the classifier returned unknown, or there's no
-    /// matching profile value, or (in Shadow) confidence was below
-    /// threshold.
-    Skip { reason: SkipReason },
+pub enum FillDecision<'a> {
+    /// Skip — surfaces *why* via [`SkipReason`].
+    Skip(SkipReason),
     /// Fill the field outright (Chaos mode, or Shadow above threshold).
-    Fill,
-    /// Ask the user yes/no per field (TrainingWheels mode).
-    Prompt,
+    /// Carries the value so the run loop doesn't re-look-up.
+    Fill { value: &'a str },
+    /// Ask the user yes/no per field (TrainingWheels mode). Carries
+    /// the value to propose and the classifier key for context.
+    Prompt { value: &'a str, key: &'static str },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,41 +90,36 @@ pub enum SkipReason {
 }
 
 /// Apply the autonomy-mode policy to one field. Pure; no I/O.
-pub fn decide(
+/// `value` is `Some(s)` when the profile has a non-empty value for the
+/// classified key. `decide` borrows it into the returned variant so
+/// the caller doesn't need to re-look-up or unwrap.
+pub fn decide<'a>(
     mode: Mode,
-    key: &str,
+    key: &'static str,
     confidence: f32,
     threshold: ConfidenceThreshold,
-    has_profile_value: bool,
+    value: Option<&'a str>,
     has_dom_id: bool,
-) -> FillDecision {
+) -> FillDecision<'a> {
     if key.is_empty() {
-        return FillDecision::Skip {
-            reason: SkipReason::NotClassified,
-        };
+        return FillDecision::Skip(SkipReason::NotClassified);
     }
-    if !has_profile_value {
-        return FillDecision::Skip {
-            reason: SkipReason::NoProfileValue,
-        };
-    }
+    let Some(value) = value else {
+        return FillDecision::Skip(SkipReason::NoProfileValue);
+    };
     if !has_dom_id {
-        return FillDecision::Skip {
-            reason: SkipReason::NoDomId,
-        };
+        return FillDecision::Skip(SkipReason::NoDomId);
     }
     match mode {
-        Mode::TrainingWheels => FillDecision::Prompt,
+        Mode::TrainingWheels => FillDecision::Prompt { value, key },
         Mode::Shadow => {
             if threshold.passes(confidence) {
-                FillDecision::Fill
+                FillDecision::Fill { value }
             } else {
-                FillDecision::Skip {
-                    reason: SkipReason::BelowConfidenceThreshold,
-                }
+                FillDecision::Skip(SkipReason::BelowConfidenceThreshold)
             }
         }
-        Mode::Chaos => FillDecision::Fill,
+        Mode::Chaos => FillDecision::Fill { value },
     }
 }
 
@@ -226,16 +222,15 @@ async fn run_inner(
             key,
             confidence,
             cfg.confidence_threshold,
-            value.is_some(),
+            value,
             !d.id.is_empty(),
         );
         match decision {
-            FillDecision::Skip { .. } => {
+            FillDecision::Skip(_reason) => {
                 skipped += 1;
             }
-            FillDecision::Fill => {
-                let v = value.expect("decide returned Fill ⇒ value present");
-                let _ = page.evaluate(fill_js(&d.id, v)).await;
+            FillDecision::Fill { value } => {
+                let _ = page.evaluate(fill_js(&d.id, value)).await;
                 filled += 1;
                 feedback_events.push(Feedback {
                     field: d.clone(),
@@ -244,11 +239,10 @@ async fn run_inner(
                     accepted: true,
                 });
             }
-            FillDecision::Prompt => {
-                let v = value.expect("decide returned Prompt ⇒ value present");
+            FillDecision::Prompt { value, key } => {
                 prompted += 1;
-                if prompt_user(&d.label, key, v)? {
-                    let _ = page.evaluate(fill_js(&d.id, v)).await;
+                if prompt_user(&d.label, key, value)? {
+                    let _ = page.evaluate(fill_js(&d.id, value)).await;
                     filled += 1;
                     feedback_events.push(Feedback {
                         field: d.clone(),
@@ -410,98 +404,74 @@ mod tests {
 
     #[test]
     fn decide_skip_when_classifier_returns_unknown() {
-        let d = decide(Mode::Chaos, "", 0.0, t(), true, true);
-        assert_eq!(
-            d,
-            FillDecision::Skip {
-                reason: SkipReason::NotClassified
-            }
-        );
+        let d = decide(Mode::Chaos, "", 0.0, t(), Some("anything"), true);
+        assert_eq!(d, FillDecision::Skip(SkipReason::NotClassified));
     }
 
     #[test]
     fn decide_skip_when_no_profile_value() {
-        let d = decide(Mode::Chaos, "linkedin", 1.0, t(), false, true);
-        assert_eq!(
-            d,
-            FillDecision::Skip {
-                reason: SkipReason::NoProfileValue
-            }
-        );
+        let d = decide(Mode::Chaos, "linkedin", 1.0, t(), None, true);
+        assert_eq!(d, FillDecision::Skip(SkipReason::NoProfileValue));
     }
 
     #[test]
     fn decide_skip_when_no_dom_id() {
-        let d = decide(Mode::Chaos, "email", 1.0, t(), true, false);
+        let d = decide(Mode::Chaos, "email", 1.0, t(), Some("j@e.com"), false);
+        assert_eq!(d, FillDecision::Skip(SkipReason::NoDomId));
+    }
+
+    #[test]
+    fn decide_chaos_fills_classified_field() {
+        let d = decide(Mode::Chaos, "email", 1.0, t(), Some("j@e.com"), true);
+        assert_eq!(d, FillDecision::Fill { value: "j@e.com" });
+    }
+
+    #[test]
+    fn decide_training_wheels_always_prompts_classified_fields() {
+        let d = decide(Mode::TrainingWheels, "email", 1.0, t(), Some("j@e.com"), true);
         assert_eq!(
             d,
-            FillDecision::Skip {
-                reason: SkipReason::NoDomId
+            FillDecision::Prompt {
+                value: "j@e.com",
+                key: "email"
             }
         );
     }
 
     #[test]
-    fn decide_chaos_fills_classified_field() {
-        let d = decide(Mode::Chaos, "email", 1.0, t(), true, true);
-        assert_eq!(d, FillDecision::Fill);
-    }
-
-    #[test]
-    fn decide_training_wheels_always_prompts_classified_fields() {
-        let d = decide(Mode::TrainingWheels, "email", 1.0, t(), true, true);
-        assert_eq!(d, FillDecision::Prompt);
-    }
-
-    #[test]
     fn decide_shadow_fills_above_threshold() {
-        let d = decide(Mode::Shadow, "email", 0.90, t(), true, true);
-        assert_eq!(d, FillDecision::Fill);
+        let d = decide(Mode::Shadow, "email", 0.90, t(), Some("j@e.com"), true);
+        assert_eq!(d, FillDecision::Fill { value: "j@e.com" });
     }
 
     #[test]
     fn decide_shadow_fills_at_threshold() {
         // Property: threshold is inclusive (>=). Catches accidental
         // > → >= flip in `ConfidenceThreshold::passes`.
-        let d = decide(Mode::Shadow, "email", 0.85, t(), true, true);
-        assert_eq!(d, FillDecision::Fill);
+        let d = decide(Mode::Shadow, "email", 0.85, t(), Some("j@e.com"), true);
+        assert_eq!(d, FillDecision::Fill { value: "j@e.com" });
     }
 
     #[test]
     fn decide_shadow_skips_below_threshold() {
-        let d = decide(Mode::Shadow, "email", 0.84, t(), true, true);
-        assert_eq!(
-            d,
-            FillDecision::Skip {
-                reason: SkipReason::BelowConfidenceThreshold
-            }
-        );
+        let d = decide(Mode::Shadow, "email", 0.84, t(), Some("j@e.com"), true);
+        assert_eq!(d, FillDecision::Skip(SkipReason::BelowConfidenceThreshold));
     }
 
     #[test]
     fn decide_skip_precedence_unknown_beats_threshold() {
         // If the field can't be classified at all, it doesn't matter
         // what mode/threshold says. NotClassified wins.
-        let d = decide(Mode::Shadow, "", 1.0, t(), true, true);
-        assert_eq!(
-            d,
-            FillDecision::Skip {
-                reason: SkipReason::NotClassified
-            }
-        );
+        let d = decide(Mode::Shadow, "", 1.0, t(), Some("anything"), true);
+        assert_eq!(d, FillDecision::Skip(SkipReason::NotClassified));
     }
 
     #[test]
     fn decide_skip_precedence_no_value_beats_prompt() {
         // TrainingWheels would normally Prompt, but if the user has
         // no value to fill we skip rather than prompt for nothing.
-        let d = decide(Mode::TrainingWheels, "linkedin", 1.0, t(), false, true);
-        assert_eq!(
-            d,
-            FillDecision::Skip {
-                reason: SkipReason::NoProfileValue
-            }
-        );
+        let d = decide(Mode::TrainingWheels, "linkedin", 1.0, t(), None, true);
+        assert_eq!(d, FillDecision::Skip(SkipReason::NoProfileValue));
     }
 
     #[test]

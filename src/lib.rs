@@ -51,6 +51,17 @@ pub const SEED_CORPUS_JSONL: &str = include_str!("../assets/seed-corpus.jsonl");
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct Profile {
     pub full_name: String,
+    /// Split-out first name. Populated by the resume parser (last
+    /// whitespace-separated token of `full_name` is `last_name`,
+    /// rest is `first_name`). When the form asks for first vs last
+    /// separately (Greenhouse, Workday, iCIMS), the classifier
+    /// returns "first_name" / "last_name" and the run loop reads
+    /// these. Forms that ask for one combined "Name" field still
+    /// get `full_name`.
+    #[serde(default)]
+    pub first_name: String,
+    #[serde(default)]
+    pub last_name: String,
     pub email: String,
     pub phone: String,
     pub address: String,
@@ -317,6 +328,35 @@ pub fn version() -> &'static str {
 ///
 /// This is the Rust mirror of `extension/content.js::predictKey`. Both
 /// must agree byte-for-byte on the same input. Tested below.
+/// Split `s` into lowercase word tokens. Splits on non-alphanumeric
+/// boundaries AND on camelCase transitions ("websiteLinkedIn" →
+/// ["website","linked","in"]). Used for word-equality checks on
+/// short ambiguous tokens like "first" / "last" that would
+/// false-positive on substring matches inside developer-chosen ids.
+fn tokenize(s: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut prev_lower = false;
+    for c in s.chars() {
+        if !c.is_alphanumeric() {
+            if !cur.is_empty() {
+                out.push(std::mem::take(&mut cur).to_lowercase());
+            }
+            prev_lower = false;
+            continue;
+        }
+        if prev_lower && c.is_ascii_uppercase() && !cur.is_empty() {
+            out.push(std::mem::take(&mut cur).to_lowercase());
+        }
+        cur.push(c);
+        prev_lower = c.is_ascii_lowercase();
+    }
+    if !cur.is_empty() {
+        out.push(cur.to_lowercase());
+    }
+    out
+}
+
 pub fn predict_field_key(f: &FieldDescriptor) -> &'static str {
     let hay = format!(
         "{} {} {} {} {}",
@@ -324,6 +364,17 @@ pub fn predict_field_key(f: &FieldDescriptor) -> &'static str {
     )
     .to_lowercase();
     let has = |needle: &str| hay.contains(needle);
+    // For short ambiguous tokens (first/last/given/family/forename/
+    // city/zip), substring matching false-positives inside developer
+    // ids like `id="first"` or `name="firstChoice"`. Use:
+    //   - has_word: word-equality over the camelCase-aware tokenization.
+    //   - has_phrase: substring match over a normalized "tokens joined
+    //     by spaces" form. Catches "first_name" / "firstName" /
+    //     "first-name" / "First Name" — all normalize to "first name".
+    let tokens = tokenize(&hay);
+    let has_word = |w: &str| tokens.iter().any(|t| t == w);
+    let hay_norm: String = tokens.join(" ");
+    let has_phrase = |p: &str| hay_norm.contains(p);
 
     // Strong, vendor-stable signals first (HTML5 input types).
     // We deliberately do NOT use substring "tel" — it appears inside
@@ -345,7 +396,16 @@ pub fn predict_field_key(f: &FieldDescriptor) -> &'static str {
     if has("website") || has("portfolio") {
         return "website";
     }
-    if has("address") || has("street") || has("city") || has("zip") {
+    // Address sub-fields: most-specific first.
+    // postal_code beats "address" because "postal" + "address" can
+    // co-occur on the same field metadata.
+    if has_word("postal") || has_word("postcode") || has_word("zip") {
+        return "postal_code";
+    }
+    if has_word("city") {
+        return "address"; // city → address slot for now (Tier 2 will split)
+    }
+    if has_word("street") || has("address") {
         return "address";
     }
     if has("authoriz") || has("visa") || has("sponsor") {
@@ -354,7 +414,32 @@ pub fn predict_field_key(f: &FieldDescriptor) -> &'static str {
     if (has("year") || has("yrs")) && has("exp") {
         return "years_experience";
     }
+    // Name disambiguation (specificity-ordered):
+    //   first/given/forename + name → first_name
+    //   last/family/sur + name      → last_name
+    //   "surname" alone              → last_name
+    //   anything else mentioning "name" → full_name
+    if has_word("surname") {
+        return "last_name";
+    }
     if has("name") {
+        // Phrase-based — the developer typed "first" + "name" together,
+        // which is a real signal. A bare id="first" (no "name" near it)
+        // does NOT trigger; that's the correct behavior — `id` alone
+        // can't disambiguate first vs full vs anything else.
+        let first_signal = has_phrase("first name")
+            || has_phrase("given name")
+            || has_word("forename");
+        let last_signal =
+            has_phrase("last name") || has_phrase("family name") || has_word("surname");
+        if first_signal && !last_signal {
+            return "first_name";
+        }
+        if last_signal && !first_signal {
+            return "last_name";
+        }
+        // Both signals or neither → fall through to full_name.
+        // (E.g. a "Legal Name (First and Last)" field asks for both.)
         return "full_name";
     }
     if kind == "textarea" {
@@ -377,11 +462,31 @@ pub fn predict_field_key_with_confidence(f: &FieldDescriptor) -> (&'static str, 
 /// Resolve a classified key to the value the user has in their profile.
 /// Returns `None` for unknown / freetext / fields not in the schema.
 pub fn profile_value_for_key<'a>(profile: &'a Profile, key: &str) -> Option<&'a str> {
+    // first_name / last_name fall back to full_name when the user
+    // hasn't split their name (older profiles before this schema).
     let v: &str = match key {
         "full_name" => &profile.full_name,
+        "first_name" => {
+            if profile.first_name.is_empty() {
+                &profile.full_name
+            } else {
+                &profile.first_name
+            }
+        }
+        "last_name" => {
+            if profile.last_name.is_empty() {
+                &profile.full_name
+            } else {
+                &profile.last_name
+            }
+        }
         "email" => &profile.email,
         "phone" => &profile.phone,
         "address" => &profile.address,
+        // postal_code falls back to the unstructured `address`
+        // string when no parsed sub-field exists. Tier 2 will add
+        // a real postal_code field on Profile.
+        "postal_code" => &profile.address,
         "linkedin" => &profile.linkedin,
         "github" => &profile.github,
         "website" => &profile.website,
@@ -774,8 +879,11 @@ mod tests {
     #[test]
     fn predict_address_variants() {
         assert_eq!(predict_field_key(&fd("Street address", "", "", "", "", "text")), "address");
+        // City and street still route to "address" until Tier 2 splits
+        // them. Zip routes to postal_code (Tier 1 — most-specific subfield).
         assert_eq!(predict_field_key(&fd("City", "", "", "", "", "text")), "address");
-        assert_eq!(predict_field_key(&fd("Zip code", "", "", "", "", "text")), "address");
+        assert_eq!(predict_field_key(&fd("Zip code", "", "", "", "", "text")), "postal_code");
+        assert_eq!(predict_field_key(&fd("Postal code", "", "", "", "", "text")), "postal_code");
     }
     #[test]
     fn predict_work_authorization_variants() {
@@ -796,10 +904,54 @@ mod tests {
         );
     }
     #[test]
-    fn predict_full_name() {
-        assert_eq!(predict_field_key(&fd("First name", "", "", "fname", "", "text")), "full_name");
-        assert_eq!(predict_field_key(&fd("Last name", "", "", "", "", "text")), "full_name");
+    fn predict_name_disambiguation() {
+        // Most-common bug: forms with separate first/last fields used
+        // to both classify as "full_name" and got the same string
+        // dropped into both. Now they split.
+        assert_eq!(predict_field_key(&fd("First name", "", "", "fname", "", "text")), "first_name");
+        assert_eq!(predict_field_key(&fd("Last name", "", "", "", "", "text")), "last_name");
+        assert_eq!(predict_field_key(&fd("Surname", "", "", "", "", "text")), "last_name");
+        assert_eq!(predict_field_key(&fd("Given name", "", "", "", "", "text")), "first_name");
+        assert_eq!(predict_field_key(&fd("Family name", "", "", "", "", "text")), "last_name");
+        // Single-name field stays full_name
         assert_eq!(predict_field_key(&fd("Full name", "", "", "", "", "text")), "full_name");
+        assert_eq!(predict_field_key(&fd("Name", "", "", "", "", "text")), "full_name");
+        // Workday — real markup has aria-label="First Name" alongside
+        // the parenthesized visible label. The aria-label is the
+        // unambiguous signal; the parenthesized "(First)" alone
+        // cannot disambiguate (form might use "Name (First)" or
+        // "Name (Mr/Mrs)" with the same shape).
+        assert_eq!(
+            predict_field_key(&fd(
+                "Legal Name (First)",
+                "",
+                "First Name",
+                "legalNameFirst",
+                "lf",
+                "text"
+            )),
+            "first_name"
+        );
+        assert_eq!(
+            predict_field_key(&fd(
+                "Legal Name (Last)",
+                "",
+                "Last Name",
+                "legalNameLast",
+                "ll",
+                "text"
+            )),
+            "last_name"
+        );
+
+        // Negative case: a form whose ID alone happens to be "first"
+        // but whose label is "Full name" — must NOT classify as
+        // first_name. This is the Lever combined-name-field shape
+        // and the case the e2e test caught.
+        assert_eq!(
+            predict_field_key(&fd("Full name", "", "", "name", "first", "text")),
+            "full_name"
+        );
     }
     #[test]
     fn predict_textarea_routes_to_freetext() {

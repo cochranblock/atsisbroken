@@ -73,8 +73,22 @@ After R3 + R5 + R7 close: 1.0 candidate.
       **Live test caught a real classifier bug** (substring "tel"
       inside "websiteLinkedIn" routing to phone instead of linkedin)
       that no unit test would have caught. Fixed; regression-pinned.
-- [ ] Split full_name into first_name / last_name (e2e screenshot
-      shows both first/last fields filled with the same string).
+- [x] Split full_name into first_name / last_name. Profile schema
+      gets first_name + last_name fields (alongside full_name for
+      single-name vendors). Resume parser splits on whitespace
+      (last token = last_name; rest = first_name; one-word names
+      stay full_name only). Classifier disambiguates via phrase-
+      based matching ("first name" / "first_name" / "firstName" /
+      "first-name" all normalize via camelCase tokenization);
+      bare id="first" no longer false-positives. profile_value_
+      for_key falls back to full_name when first_name/last_name
+      are empty (forward-compat for older profiles).
+      Per-vendor expected_keys in kova fixture: Greenhouse/Workday
+      /iCIMS split first/last; Lever/Ashby use combined "Name" →
+      full_name.
+      Visible win: Greenhouse-shape e2e screenshot now shows
+      First name="Jane Q." and Last name="Doe" — different
+      strings.
 - [ ] Split address into address_line1 / city / postal_code (same
       issue — e2e shows three address fields all filled with the
       same multi-part string).
