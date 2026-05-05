@@ -94,8 +94,13 @@ baked third-party weights. Three autonomy modes:
 | A10 | Browser crashes mid-fill | CDP session detect + restart. ⚠️ not yet wired |
 | A11 | macOS Gatekeeper blocks the binary | GitHub Release ships notarized binaries. ⚠️ release pipeline TBD |
 
-## What the current scaffold actually delivers
+## What the current scaffold actually delivers (2026-05-05)
 
+- ✅ **`atsisbroken run --url <ATS-URL>` actually fills the form
+  end-to-end.** Launches chromium, snapshots fields, classifies,
+  fills, screenshots, persists feedback queue, exits without
+  submitting. Smoke-verified live on the dev box. (Was the keystone
+  gap until commit `695a1d8`.)
 - ✅ TUI as default surface (Claude-Code aesthetic, three tabs).
 - ✅ Multi-profile via `--profile <path>` (P4 closed).
 - ✅ Strategy ladder with 7 fall-through tiers — userscript /
@@ -103,8 +108,27 @@ baked third-party weights. Three autonomy modes:
 - ✅ Browser detection per OS (`status` shows the user's default).
 - ✅ Three-state initialized detection (`no` / `exists but empty` /
   `yes`).
-- ✅ Chrome extension + Native Messaging bridge.
+- ✅ Chrome extension + Native Messaging bridge (code complete,
+  bridge not yet spoken to by a real Chrome session in this repo).
 - ✅ Single-package layout. `cargo build` produces one binary.
+
+## What the docs claim but isn't shipping yet
+
+- ⚠ **`Mode::TrainingWheels` per-field yes/no prompts** — mode flag
+  exists but `run_loop` fills everything classified. No prompts.
+- ⚠ **`Mode::Shadow` confidence gating** — `ConfidenceThreshold`
+  struct exists; nothing reads it.
+- ⚠ **`atsisbroken graduate`** — still `eprintln!("not yet wired")`.
+  Mode never persists.
+- ⚠ **`first_name`/`last_name` split** — both still classify as
+  `full_name` and get the same string. (Visible in every fill
+  screenshot.)
+- ⚠ **Structured address** — `address_line1`/`city`/`postal_code`
+  all classify as `address` and get the same raw string.
+- ⚠ **Workday re-render verifier** — `run_loop` doesn't re-snapshot
+  250 ms after fill. Workday will silently undo us.
+- ⚠ **Online learning** — feedback events accumulate. Nothing reads
+  them. Model never updates.
 - ✅ Custom `.safetensors` slot reserved at the workspace root, baked via
   `include_bytes!`. Currently a clearly-labeled placeholder.
 - ✅ Four bake variants gated by feature: `bake-tiny` (default),

@@ -44,29 +44,40 @@ no JS toolchain, no kernel extensions, no admin password.
 
 ---
 
-## 2. First job application (TrainingWheels)
+## 2. First job application (today, 2026-05-05)
 
 7. User navigates to a real ATS form (Workday / Greenhouse / Lever /
-   iCIMS / etc.).
-8. Two things happen in parallel:
-   - The **extension** observes form fields. As the user fills each
-     field, `content.js` records `(FieldDescriptor → predicted_key)`
-     into `chrome.storage.local`. The user's typed value never leaves
-     the page.
-   - When the user clicks the extension popup → "Fill with atsisbroken"
-     (or runs `atsisbroken run` from a terminal), the desktop binary
-     attaches via CDP, snapshots the form, classifies each field
-     against the local model, and asks the user **per-field**:
-     `Field "Email address" → email — fill with jane@example.com? [y/N]`
-9. User says yes/no. Yes → fill + log positive example. No → skip + log
-   negative example.
-10. Application submitted. Behind the scenes, the binary appended N
-    `Feedback` events to `~/.atsisbroken/feedback.jsonl` and the
-    extension queued M `Observation` events in `chrome.storage.local`.
+   iCIMS / etc.) and copies its URL.
+8. User runs `atsisbroken run --url <that URL>`. The binary:
+   - launches chromium via `chromiumoxide::Browser::launch`,
+   - opens the URL,
+   - waits 1.5 s for hydration,
+   - snapshots every `<input>`/`<textarea>`/`<select>` via
+     `Runtime.evaluate`,
+   - classifies each via `predict_field_key` (keyword classifier today),
+   - fills every confident-classified field whose key has a non-empty
+     profile value, dispatching `input` and `change` events,
+   - takes a full-page screenshot to
+     `~/.atsisbroken/run-<unix>.png`,
+   - appends one `Feedback{accepted: true}` event per fill to
+     `~/.atsisbroken/feedback.jsonl`,
+   - exits. **Never submits.**
+9. The launched browser stays open. User reviews the filled form
+   in the visible window and clicks Submit themselves.
 
-After ~5 minutes (or "Sync" in the popup), the extension pushes its
-observations through the Native Messaging bridge into the binary's
-local queue. Two streams converge into one feedback ledger.
+What's in scope for v0.1 vs the original spec:
+
+- The **per-field yes/no prompt** for TrainingWheels mode is **not
+  yet implemented**. Today every classified field with a profile
+  value gets filled. Mode flag is plumbed through CLI but ignored
+  by the run loop. (Tracked: BACKLOG "Now — other".)
+- The Chrome extension + Native Messaging bridge **exist as code**
+  and have a unit-test gate, but the bridge has not been spoken to
+  by a real Chrome instance in this session. `chrome.storage.local`
+  observation queueing in the extension is real; the connect-native
+  drain hasn't been verified end-to-end with a live extension yet.
+- Per-field `Observation` events from the extension would land in
+  the same `feedback.jsonl` once that bridge is live.
 
 ---
 

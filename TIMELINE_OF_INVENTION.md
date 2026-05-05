@@ -97,6 +97,52 @@ parser found nothing" from "real profile" — `status` now reports
 three states (`no` / `exists but empty` / `yes`). Closes the E6
 finding. Commit `72ac7a9`.
 
+## 2026-05-05 — Real production-source attribution + research
+
+**ATS fixture sources cited.** Live extension code from Jeffrey Hui
+(`workpls`), Joseph Ajibodu, and Nathaniel Ubangura's Workday
+automator surface real production selectors (`job_application[*]`
+brackets, single Lever `name`, Workday `data-automation-id`,
+`urls[Github ]` trailing-space quirk). 5-vendor fixture generator
+in `kova::exopack::ats_fixtures`, gated by feature `ats_fixtures`.
+Atsisbroken consumes via re-export. Static `.html` fixtures
+deleted. Commit `0cebacf`.
+
+**PERFECTION_PLAN.md** — research-driven contract for 1.0. Eleven
+R-phases (R1 market census → R11 beta cohort) with measurable
+targets per phase. No shipping until R3 closes ≥98% accuracy on
+canonical fields. Commit `da59c76`.
+
+**R1 (HN cohort).** 683 URLs scraped from "Ask HN: Who is hiring?
+(May 2026)" thread (item 47975571). Distribution: Ashby 49%,
+Greenhouse 30%, Lever 5%, Workday 0.9% (HN is startup-biased).
+`docs/research/ATS_MARKET_SHARE_2026Q2.md`. Commit `67e7cd3`.
+
+**R1-broader.** F500 / overall-market reconciliation citing
+AppsRunTheWorld (iCIMS 10.7% mkt leader), SHRM 2025 (Workday 39%
+of F500), Ongig 2019 (historical baseline), Workday Wikipedia,
+Maximize Market Research. Two cohorts, two priorities — Ashby
+priority 1 for HN/startup applicants; Workday priority 2 for F500.
+`docs/research/ATS_MARKET_SHARE_F500_2026.md`. Commit `a008ffc`.
+
+**R2 — Ashby first capture.** Live capture of
+`jobs.ashbyhq.com/lago/.../application` (2026-05-05). Stable
+`ashby-application-form-*` class names verified; React-hashed
+prefixes ignored as drift. Real Ashby uses single `Name` field
+(like Lever, NOT split first/last). Kova fixture `render_ashby`
+rewritten with verified selectors. Confidence promoted: C → B (3
+tenants for A; 2 retries deferred). Commits `fbc6631` (kova local)
++ `a008ffc` (atsisbroken).
+
+**KEYSTONE: real CDP fill loop.** `src/run_loop.rs::run_against_url`
+launches chromium, snapshots, classifies, fills, screenshots,
+persists feedback queue. `cmd_run --url <ATS-URL>` takes this path.
+Constraint C1 enforced — never auto-submits; explicit warning to
+user. Smoke-tested end-to-end on the dev box: 6/6 fields filled on
+a Greenhouse-shaped form, screenshot saved, feedback persisted.
+Commit `695a1d8`. **Product can now actually fill an ATS form for
+a real user.**
+
 ## Forward plan
 
 - Real CDP fill loop (chromiumoxide WebSocket, DOM snapshot,
