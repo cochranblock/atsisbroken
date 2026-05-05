@@ -42,7 +42,7 @@ enum Cmd {
     /// Attach to a running Chromium and fill forms. Auto-detects the best
     /// strategy for this environment (CDP attach → CDP launch → extension →
     /// userscript → bookmarklet → clipboard → speak). Override with
-    /// --strategy.
+    /// --strategy. With --url, drives the CDP fill loop end-to-end.
     Run {
         #[arg(long, value_parser = parse_mode)]
         mode: Option<Mode>,
@@ -53,6 +53,11 @@ enum Cmd {
         /// available is auto-picked.
         #[arg(long)]
         strategy: Option<String>,
+        /// URL to navigate to and fill. With this flag, atsisbroken
+        /// launches Chromium, navigates, classifies, fills (NEVER
+        /// submits), and saves a screenshot.
+        #[arg(long)]
+        url: Option<String>,
     },
     /// Output a TamperMonkey/Greasemonkey userscript with your profile
     /// baked in. Install once into your browser; runs on every page.
@@ -134,7 +139,7 @@ async fn main() -> Result<()> {
     match cli.cmd {
         None => cmd_tui().await,
         Some(Cmd::Init { resume }) => cmd_init(resume, profile_override).await,
-        Some(Cmd::Run { mode, cdp, strategy }) => cmd_run(mode, cdp, strategy, profile_override).await,
+        Some(Cmd::Run { mode, cdp, strategy, url }) => cmd_run(mode, cdp, strategy, url, profile_override).await,
         Some(Cmd::Userscript) => cmd_userscript(profile_override).await,
         Some(Cmd::Bookmarklet) => cmd_bookmarklet(profile_override).await,
         Some(Cmd::Copy { key }) => cmd_copy(key, profile_override).await,
@@ -209,9 +214,17 @@ async fn cmd_run(
     _mode: Option<Mode>,
     _cdp: Option<String>,
     forced: Option<String>,
+    url: Option<String>,
     profile_override: Option<std::path::PathBuf>,
 ) -> Result<()> {
     let profile = load_profile_or_hint(profile_override.as_deref())?;
+
+    // If --url is given, take the CDP-launch fill path directly,
+    // regardless of strategy detection. The user has been explicit.
+    if let Some(u) = url.as_deref() {
+        return run_cdp_url(&profile, u).await;
+    }
+
     let chosen = match forced.as_deref() {
         Some(s) => parse_strategy_override(s, &profile)?,
         None => strategy::detect(),
@@ -219,11 +232,11 @@ async fn cmd_run(
     eprintln!("atsisbroken {} — strategy: {:?}", version(), chosen);
     match chosen {
         Strategy::CdpAttach { endpoint } => run_cdp_attach(&endpoint).await,
-        Strategy::CdpLaunch { browser_path } => {
+        Strategy::CdpLaunch { browser_path: _ } => {
             eprintln!(
-                "  cdp-launch not yet wired — fall through to userscript. \n  Browser found at: {}",
-                browser_path.display()
+                "  cdp-launch needs a URL. Run with `--url <ATS-form-url>` to drive the fill loop."
             );
+            eprintln!("  Falling through to userscript output for the no-URL case:");
             print!("{}", strategy::userscript(&profile));
             Ok(())
         }
@@ -251,6 +264,18 @@ async fn cmd_run(
             Ok(())
         }
     }
+}
+
+async fn run_cdp_url(profile: &Profile, url: &str) -> Result<()> {
+    use atsisbroken::run_loop;
+    let screenshot_dir = paths::atsisbroken_dir();
+    let summary = run_loop::run_against_url(profile, url, Some(&screenshot_dir))
+        .await
+        .context("run_against_url")?;
+    let queue_depth = run_loop::persist_feedback(summary.feedback_events.clone())
+        .context("persist feedback")?;
+    eprintln!("{}", run_loop::format_summary(&summary, queue_depth));
+    Ok(())
 }
 
 fn parse_strategy_override(s: &str, profile: &Profile) -> Result<Strategy> {

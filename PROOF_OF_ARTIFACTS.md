@@ -24,9 +24,9 @@ $ cargo check
 
 | Sim | SHA-256 |
 |---|---|
-| 1 | `e497e24316d0641ae196c944a4d200547d348ca4e5fe79a3e0552eb33cf52c01` |
-| 2 | `e497e24316d0641ae196c944a4d200547d348ca4e5fe79a3e0552eb33cf52c01` |
-| 3 | `e497e24316d0641ae196c944a4d200547d348ca4e5fe79a3e0552eb33cf52c01` |
+| 1 | `db9ccb655928652d90b76e812277e4f4971c4333b0f483a74850745fce19161a` |
+| 2 | `db9ccb655928652d90b76e812277e4f4971c4333b0f483a74850745fce19161a` |
+| 3 | `db9ccb655928652d90b76e812277e4f4971c4333b0f483a74850745fce19161a` |
 
 (After `sed 's/finished in [0-9.]*s/finished/'` to strip cargo's
 wall-clock timing from the e2e test result line — the live ATS test

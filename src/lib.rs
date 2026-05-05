@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 pub mod bridge;
 pub mod browser_detect;
 pub mod cdp;
+pub mod run_loop;
 
 /// Re-export of kova's ats_fixtures exopack capability. (The `kova-engine`
 /// package exposes its lib as `kova`, hence the import name.) Used by
