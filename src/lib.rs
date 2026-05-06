@@ -49,7 +49,11 @@ pub const SEED_CORPUS_JSONL: &str = include_str!("../assets/seed-corpus.jsonl");
 
 // ─── Profile schema ────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+// Eq dropped: `technical_skills: Vec<Skill>` carries `Option<f32>`
+// (skill years), and f32 isn't Eq because of NaN. PartialEq is
+// enough for assert_eq! and HashMap-key uses; nothing in the
+// codebase needs Profile as a HashSet element.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Profile {
     pub full_name: String,
     /// Split-out first name. Populated by the resume parser (last
@@ -63,6 +67,15 @@ pub struct Profile {
     pub first_name: String,
     #[serde(default)]
     pub last_name: String,
+    /// "Goes by" — what the user actually responds to. Some ATS
+    /// forms ask both legal and preferred names.
+    #[serde(default)]
+    pub preferred_name: String,
+    /// User-typed pronouns. Free-form so the user can use any
+    /// phrasing (she/her, they/them, custom). Empty when the user
+    /// declines to share.
+    #[serde(default)]
+    pub pronouns: String,
     pub email: String,
     pub phone: String,
     /// Legacy single-line address. Retained for forward compatibility
@@ -90,11 +103,54 @@ pub struct Profile {
     pub linkedin: String,
     pub github: String,
     pub website: String,
+    /// Online presence beyond the legacy linkedin/github/website
+    /// trio. Populated by user edit; resume parser does not yet
+    /// auto-fill these. Each field is empty by default; the
+    /// classifier consults these when the form asks for a specific
+    /// platform handle.
+    #[serde(default)]
+    pub presence: OnlinePresence,
     pub work_authorization: String,
     pub years_experience: u8,
     pub experience: Vec<Experience>,
     pub education: Vec<Education>,
+    /// Legacy bag-of-words skills. Retained for forward compat;
+    /// the new `technical_skills` carries structured Skill entries
+    /// with proficiency level + years. Forms that ask for a free-
+    /// text "skills" field can still pull from this.
     pub skills: Vec<String>,
+    /// Structured technical skills with proficiency + years. Empty
+    /// by default (resume parser does not yet populate). Phase H
+    /// `init` walkthrough will let the user enter these explicitly.
+    #[serde(default)]
+    pub technical_skills: Vec<Skill>,
+    /// Spoken/written languages with proficiency.
+    #[serde(default)]
+    pub languages: Vec<Language>,
+    /// Soft skills as plain strings — no proficiency vocabulary
+    /// exists for these in industry, so we don't invent one.
+    #[serde(default)]
+    pub soft_skills: Vec<String>,
+    /// Professional certifications (AWS, CISSP, PMP, etc.).
+    #[serde(default)]
+    pub certifications: Vec<Certification>,
+    /// Personal / open-source projects. May cross-link to a
+    /// GitHub inventory entry via `github_repo` when Phase I lands.
+    #[serde(default)]
+    pub projects: Vec<Project>,
+    /// Compensation expectations. None when the user has not chosen
+    /// to share — the run loop must NOT autofill compensation
+    /// fields without the user's explicit value here.
+    #[serde(default)]
+    pub compensation: Option<Compensation>,
+    /// Voluntary EEO / AAP demographics. None by default — the run
+    /// loop has a hard contract that demographics fields are skipped
+    /// in every mode unless the user has explicitly set this AND
+    /// opted in per-fill via a dedicated flag (not implemented yet).
+    /// Even setting `Some(Demographics::default())` does NOT enable
+    /// autofill on its own.
+    #[serde(default)]
+    pub demographics: Option<Demographics>,
     pub raw_resume_text: String,
 }
 
@@ -121,6 +177,30 @@ pub struct Experience {
     pub start: String,
     pub end: String,
     pub bullets: Vec<String>,
+    /// City/state/country of the role. Empty when remote or unknown.
+    #[serde(default)]
+    pub location: String,
+    /// Free-form: "full-time", "part-time", "contract", "internship",
+    /// "volunteer". Free-form rather than enum so a user can use
+    /// any phrasing the form expects.
+    #[serde(default)]
+    pub employment_type: String,
+    /// Reference contact info — some ATS forms ask. Empty by default;
+    /// the user opts in per-experience.
+    #[serde(default)]
+    pub supervisor_name: String,
+    #[serde(default)]
+    pub supervisor_email: String,
+    #[serde(default)]
+    pub supervisor_phone: String,
+    /// Free-form. Empty unless the user wants to volunteer it.
+    #[serde(default)]
+    pub reason_for_leaving: String,
+    /// "May we contact this employer for a reference?" — common ATS
+    /// boolean field. Defaults to false (the user must opt in
+    /// explicitly; we never assume contact permission).
+    #[serde(default)]
+    pub can_we_contact: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -131,6 +211,217 @@ pub struct Education {
     pub start: String,
     pub end: String,
     pub gpa: Option<String>,
+    /// Honors / distinctions: "Cum Laude", "Phi Beta Kappa",
+    /// "Dean's List". Empty when none claimed.
+    #[serde(default)]
+    pub honors: Vec<String>,
+    #[serde(default)]
+    pub minor: String,
+    #[serde(default)]
+    pub relevant_coursework: Vec<String>,
+    #[serde(default)]
+    pub thesis_title: String,
+    #[serde(default)]
+    pub extracurriculars: Vec<String>,
+    /// City/state of the institution.
+    #[serde(default)]
+    pub location: String,
+}
+
+// ─── Profile sub-structs added in Phase G ─────────────────────────────────
+
+/// Online presence beyond the legacy linkedin/github/website fields
+/// which remain at the Profile root for forward-compat. Each field
+/// is empty when the user has nothing to share. Field names align
+/// with the platform name lowercased so the classifier can route
+/// `has("mastodon")` → `mastodon`, etc.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct OnlinePresence {
+    #[serde(default)]
+    pub gitlab: String,
+    #[serde(default)]
+    pub bitbucket: String,
+    #[serde(default)]
+    pub portfolio: String,
+    /// Personal blog or writing site URL.
+    #[serde(default)]
+    pub blog: String,
+    #[serde(default)]
+    pub twitter: String,
+    #[serde(default)]
+    pub bluesky: String,
+    #[serde(default)]
+    pub mastodon: String,
+    #[serde(default)]
+    pub stackoverflow: String,
+    #[serde(default)]
+    pub devto: String,
+    #[serde(default)]
+    pub medium: String,
+    #[serde(default)]
+    pub hashnode: String,
+    #[serde(default)]
+    pub youtube: String,
+    #[serde(default)]
+    pub dribbble: String,
+    #[serde(default)]
+    pub behance: String,
+    #[serde(default)]
+    pub artstation: String,
+}
+
+/// Self-reported proficiency for one technical skill.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillLevel {
+    Beginner,
+    Intermediate,
+    Advanced,
+    Expert,
+}
+
+impl Default for SkillLevel {
+    fn default() -> Self {
+        SkillLevel::Intermediate
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct Skill {
+    pub name: String,
+    /// Years of experience with the skill. Optional — many users
+    /// can't or don't want to estimate.
+    #[serde(default)]
+    pub years: Option<f32>,
+    #[serde(default)]
+    pub level: SkillLevel,
+    /// Year of last use, e.g. "2025". Empty when not specified.
+    #[serde(default)]
+    pub last_used: String,
+}
+
+/// Self-reported proficiency for one spoken/written language.
+/// Categories chosen to map onto common ATS dropdowns rather than
+/// the more granular CEFR levels.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LanguageProficiency {
+    Native,
+    Fluent,
+    Conversational,
+    Beginner,
+}
+
+impl Default for LanguageProficiency {
+    fn default() -> Self {
+        LanguageProficiency::Conversational
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct Language {
+    pub name: String,
+    #[serde(default)]
+    pub proficiency: LanguageProficiency,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct Certification {
+    pub name: String,
+    pub issuer: String,
+    /// "YYYY-MM" or "YYYY". Free-form to match what the user has
+    /// on the credential itself.
+    pub issue_date: String,
+    /// Empty when the cert doesn't expire or the user prefers not
+    /// to disclose. (`Option<String>` would force null in JSON;
+    /// empty-string is friendlier in TOML.)
+    #[serde(default)]
+    pub expiry_date: String,
+    #[serde(default)]
+    pub credential_id: String,
+    #[serde(default)]
+    pub credential_url: String,
+}
+
+/// Cross-link target. When a `Project` corresponds to a GitHub repo,
+/// `Project.github_repo` carries this so the answer composer (Phase K)
+/// can pull verbatim README excerpts and commit messages from the
+/// GitHub inventory entry with the same (owner, name).
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct RepoRef {
+    pub owner: String,
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct Project {
+    pub name: String,
+    pub description: String,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub start_date: String,
+    #[serde(default)]
+    pub end_date: String,
+    #[serde(default)]
+    pub technologies: Vec<String>,
+    /// Role the user played. "creator", "maintainer", "contributor",
+    /// "lead engineer", etc. Free-form.
+    #[serde(default)]
+    pub role: String,
+    #[serde(default)]
+    pub highlights: Vec<String>,
+    /// Cross-link to a GitHub inventory repo when applicable. None
+    /// for projects that don't live on GitHub.
+    #[serde(default)]
+    pub github_repo: Option<RepoRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct Compensation {
+    /// Numeric expectations. None when the user prefers to defer
+    /// to negotiation; the run loop will skip salary fields rather
+    /// than guess a number.
+    #[serde(default)]
+    pub salary_expectation_min: Option<u32>,
+    #[serde(default)]
+    pub salary_expectation_max: Option<u32>,
+    /// ISO 4217 code (USD, EUR, GBP). Defaults to USD as the most
+    /// common ATS form expectation; the user can change it.
+    pub salary_currency: String,
+    /// Free-form, e.g. "open to equity-heavy", "negotiable".
+    #[serde(default)]
+    pub compensation_notes: String,
+    #[serde(default)]
+    pub desired_base: Option<u32>,
+    #[serde(default)]
+    pub desired_variable: Option<u32>,
+    #[serde(default)]
+    pub desired_equity: String,
+}
+
+/// Voluntary self-identification fields. Off by default; the run loop
+/// has a hard contract that demographics fields are skipped in every
+/// mode unless the user has both populated this struct AND passed the
+/// per-run flag (not implemented yet — explicit gesture required).
+///
+/// All fields are free-form strings so users can write what they
+/// actually identify as without being forced into our enum vocabulary.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct Demographics {
+    #[serde(default)]
+    pub gender: String,
+    #[serde(default)]
+    pub race_ethnicity: Vec<String>,
+    #[serde(default)]
+    pub veteran_status: String,
+    #[serde(default)]
+    pub disability_status: String,
+    /// Stored as a string ("yes", "no", "prefer_not_to_say") rather
+    /// than bool so users can decline without us inferring false.
+    #[serde(default)]
+    pub lgbtq_self_id: String,
 }
 
 /// One ATS form field as seen by the DOM extractor. The classifier's input.
@@ -1149,6 +1440,10 @@ mod tests {
     }
 
     /// Experience is the deepest nested struct in Profile — pin it.
+    /// Phase G added 7 forward-compat fields (location, employment_type,
+    /// supervisor_name/email/phone, reason_for_leaving, can_we_contact);
+    /// they all serialize at default values when not set, which is what
+    /// the wire format now looks like for v0 profile.toml entries.
     #[test]
     fn experience_json_shape_is_stable() {
         let e = Experience {
@@ -1157,14 +1452,17 @@ mod tests {
             start: "2020-01".into(),
             end: "2024-06".into(),
             bullets: vec!["shipped X".into(), "led Y".into()],
+            ..Default::default()
         };
         let got = serde_json::to_string(&e).unwrap();
-        let want = r#"{"company":"Acme Co","title":"Engineer III","start":"2020-01","end":"2024-06","bullets":["shipped X","led Y"]}"#;
+        let want = r#"{"company":"Acme Co","title":"Engineer III","start":"2020-01","end":"2024-06","bullets":["shipped X","led Y"],"location":"","employment_type":"","supervisor_name":"","supervisor_email":"","supervisor_phone":"","reason_for_leaving":"","can_we_contact":false}"#;
         assert_eq!(got, want);
     }
 
     /// Pin Education's on-disk shape including the Option<gpa> serialization
     /// (must be `null` when None — not omitted — so file diffs are stable).
+    /// Phase G added 6 forward-compat fields (honors, minor,
+    /// relevant_coursework, thesis_title, extracurriculars, location).
     #[test]
     fn education_json_shape_is_stable() {
         let ed = Education {
@@ -1174,9 +1472,10 @@ mod tests {
             start: "2016".into(),
             end: "2020".into(),
             gpa: None,
+            ..Default::default()
         };
         let got = serde_json::to_string(&ed).unwrap();
-        let want = r#"{"school":"State U","degree":"BS","field":"CS","start":"2016","end":"2020","gpa":null}"#;
+        let want = r#"{"school":"State U","degree":"BS","field":"CS","start":"2016","end":"2020","gpa":null,"honors":[],"minor":"","relevant_coursework":[],"thesis_title":"","extracurriculars":[],"location":""}"#;
         assert_eq!(got, want);
     }
 
@@ -1202,6 +1501,348 @@ mod tests {
         let p: Profile = toml::from_str(toml_text).unwrap();
         assert_eq!(p.full_name, "Jane Doe");
         assert_eq!(p.email, "jane@example.com");
+    }
+
+    // ─── Phase G: expanded schema migration + sub-struct round-trips ──────
+
+    /// v0 → v1 migration without an explicit migrate function: every
+    /// Phase G field is `#[serde(default)]`, so a TOML written by an
+    /// older atsisbroken version parses cleanly with all new fields at
+    /// their defaults. This is the migration. Add a field, give it a
+    /// default — never re-shape what's already on disk.
+    #[test]
+    fn profile_v0_toml_loads_with_phase_g_defaults() {
+        // Exact shape an older atsisbroken (pre-Phase-G) would have written.
+        let v0 = r#"
+            full_name = "Jane Doe"
+            first_name = "Jane"
+            last_name = "Doe"
+            email = "jane@example.com"
+            phone = "+1-555-0100"
+            address = "123 Main St, Anywhere, CA 94000"
+            street1 = ""
+            street2 = ""
+            city = ""
+            state = ""
+            postal_code = ""
+            country = ""
+            linkedin = ""
+            github = ""
+            website = ""
+            work_authorization = "Citizen"
+            years_experience = 7
+            raw_resume_text = ""
+            experience = []
+            education = []
+            skills = ["rust", "ml"]
+        "#;
+        let p: Profile = toml::from_str(v0).unwrap();
+        // Existing fields preserved.
+        assert_eq!(p.full_name, "Jane Doe");
+        assert_eq!(p.first_name, "Jane");
+        assert_eq!(p.last_name, "Doe");
+        assert_eq!(p.years_experience, 7);
+        assert_eq!(p.skills, vec!["rust".to_string(), "ml".to_string()]);
+        // Every new Phase G field defaults cleanly.
+        assert_eq!(p.preferred_name, "");
+        assert_eq!(p.pronouns, "");
+        assert_eq!(p.presence, OnlinePresence::default());
+        assert!(p.technical_skills.is_empty());
+        assert!(p.languages.is_empty());
+        assert!(p.soft_skills.is_empty());
+        assert!(p.certifications.is_empty());
+        assert!(p.projects.is_empty());
+        assert!(p.compensation.is_none());
+        assert!(p.demographics.is_none());
+    }
+
+    /// Round-trip every Phase G field non-default through TOML. If any
+    /// new field gets dropped or reshaped on serialize/deserialize, this
+    /// detects it before users lose data.
+    #[test]
+    fn profile_v1_full_round_trip_preserves_all_phase_g_fields() {
+        let p = Profile {
+            full_name: "Jane Q. Doe".into(),
+            first_name: "Jane Q.".into(),
+            last_name: "Doe".into(),
+            preferred_name: "Janie".into(),
+            pronouns: "she/her".into(),
+            email: "jane@example.com".into(),
+            phone: "+1-555-0100".into(),
+            address: "".into(),
+            street1: "123 Main St".into(),
+            city: "Anywhere".into(),
+            state: "CA".into(),
+            postal_code: "94000".into(),
+            country: "USA".into(),
+            linkedin: "https://linkedin.com/in/janedoe".into(),
+            github: "https://github.com/janedoe".into(),
+            website: "https://janedoe.dev".into(),
+            presence: OnlinePresence {
+                gitlab: "https://gitlab.com/janedoe".into(),
+                portfolio: "https://janedoe.dev/portfolio".into(),
+                blog: "https://janedoe.dev/blog".into(),
+                twitter: "@janedoe".into(),
+                bluesky: "@janedoe.bsky.social".into(),
+                mastodon: "@janedoe@mastodon.social".into(),
+                stackoverflow: "https://stackoverflow.com/users/123/janedoe".into(),
+                ..Default::default()
+            },
+            work_authorization: "Citizen".into(),
+            years_experience: 7,
+            technical_skills: vec![Skill {
+                name: "Rust".into(),
+                years: Some(5.5),
+                level: SkillLevel::Advanced,
+                last_used: "2026".into(),
+            }],
+            languages: vec![Language {
+                name: "Spanish".into(),
+                proficiency: LanguageProficiency::Conversational,
+            }],
+            soft_skills: vec!["written communication".into()],
+            certifications: vec![Certification {
+                name: "AWS Solutions Architect — Associate".into(),
+                issuer: "Amazon Web Services".into(),
+                issue_date: "2024-09".into(),
+                expiry_date: "2027-09".into(),
+                credential_id: "ABC-123".into(),
+                credential_url: "https://credly.com/badges/abc-123".into(),
+            }],
+            projects: vec![Project {
+                name: "atsisbroken".into(),
+                description: "Browser autopilot for ATS forms".into(),
+                url: "https://github.com/cochranblock/atsisbroken".into(),
+                start_date: "2026-04".into(),
+                end_date: "".into(),
+                technologies: vec!["Rust".into(), "CDP".into()],
+                role: "creator/maintainer".into(),
+                highlights: vec!["263/263 tests".into()],
+                github_repo: Some(RepoRef {
+                    owner: "cochranblock".into(),
+                    name: "atsisbroken".into(),
+                    url: "https://github.com/cochranblock/atsisbroken".into(),
+                }),
+            }],
+            compensation: Some(Compensation {
+                salary_expectation_min: Some(150_000),
+                salary_expectation_max: Some(220_000),
+                salary_currency: "USD".into(),
+                compensation_notes: "open to equity-heavy".into(),
+                desired_base: Some(170_000),
+                desired_variable: Some(20_000),
+                desired_equity: "0.1%".into(),
+            }),
+            demographics: Some(Demographics::default()),
+            raw_resume_text: "".into(),
+            ..Default::default()
+        };
+        let toml_text = toml::to_string(&p).unwrap();
+        let back: Profile = toml::from_str(&toml_text).unwrap();
+        assert_eq!(p, back);
+    }
+
+    /// Pin OnlinePresence's wire shape. Drift here would silently
+    /// drop link kinds from existing user profiles.
+    #[test]
+    fn online_presence_json_shape_is_stable() {
+        let op = OnlinePresence::default();
+        let got = serde_json::to_string(&op).unwrap();
+        let want = r#"{"gitlab":"","bitbucket":"","portfolio":"","blog":"","twitter":"","bluesky":"","mastodon":"","stackoverflow":"","devto":"","medium":"","hashnode":"","youtube":"","dribbble":"","behance":"","artstation":""}"#;
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn skill_json_shape_is_stable() {
+        let s = Skill {
+            name: "Rust".into(),
+            years: Some(5.0),
+            level: SkillLevel::Advanced,
+            last_used: "2026".into(),
+        };
+        let got = serde_json::to_string(&s).unwrap();
+        let want = r#"{"name":"Rust","years":5.0,"level":"advanced","last_used":"2026"}"#;
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn skill_level_serializes_snake_case() {
+        assert_eq!(serde_json::to_string(&SkillLevel::Beginner).unwrap(), "\"beginner\"");
+        assert_eq!(serde_json::to_string(&SkillLevel::Intermediate).unwrap(), "\"intermediate\"");
+        assert_eq!(serde_json::to_string(&SkillLevel::Advanced).unwrap(), "\"advanced\"");
+        assert_eq!(serde_json::to_string(&SkillLevel::Expert).unwrap(), "\"expert\"");
+    }
+
+    #[test]
+    fn skill_default_level_is_intermediate() {
+        // Self-reported defaults bias toward "I can do this" rather
+        // than "I'm a beginner" — most users underclaim, not overclaim.
+        // Deliberate; if this changes, do it on purpose.
+        assert_eq!(SkillLevel::default(), SkillLevel::Intermediate);
+    }
+
+    #[test]
+    fn language_json_shape_is_stable() {
+        let l = Language {
+            name: "Spanish".into(),
+            proficiency: LanguageProficiency::Conversational,
+        };
+        let got = serde_json::to_string(&l).unwrap();
+        let want = r#"{"name":"Spanish","proficiency":"conversational"}"#;
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn language_proficiency_serializes_snake_case() {
+        assert_eq!(serde_json::to_string(&LanguageProficiency::Native).unwrap(), "\"native\"");
+        assert_eq!(serde_json::to_string(&LanguageProficiency::Fluent).unwrap(), "\"fluent\"");
+        assert_eq!(serde_json::to_string(&LanguageProficiency::Conversational).unwrap(), "\"conversational\"");
+        assert_eq!(serde_json::to_string(&LanguageProficiency::Beginner).unwrap(), "\"beginner\"");
+    }
+
+    #[test]
+    fn certification_json_shape_is_stable() {
+        let c = Certification {
+            name: "AWS SAA".into(),
+            issuer: "AWS".into(),
+            issue_date: "2024-09".into(),
+            expiry_date: "2027-09".into(),
+            credential_id: "ABC-123".into(),
+            credential_url: "https://credly.com/badges/abc-123".into(),
+        };
+        let got = serde_json::to_string(&c).unwrap();
+        let want = r#"{"name":"AWS SAA","issuer":"AWS","issue_date":"2024-09","expiry_date":"2027-09","credential_id":"ABC-123","credential_url":"https://credly.com/badges/abc-123"}"#;
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn project_with_github_repo_json_shape_is_stable() {
+        let proj = Project {
+            name: "atsisbroken".into(),
+            description: "Browser autopilot".into(),
+            url: "https://github.com/cochranblock/atsisbroken".into(),
+            start_date: "2026-04".into(),
+            end_date: "".into(),
+            technologies: vec!["Rust".into()],
+            role: "creator".into(),
+            highlights: vec!["263/263".into()],
+            github_repo: Some(RepoRef {
+                owner: "cochranblock".into(),
+                name: "atsisbroken".into(),
+                url: "https://github.com/cochranblock/atsisbroken".into(),
+            }),
+        };
+        let got = serde_json::to_string(&proj).unwrap();
+        let want = r#"{"name":"atsisbroken","description":"Browser autopilot","url":"https://github.com/cochranblock/atsisbroken","start_date":"2026-04","end_date":"","technologies":["Rust"],"role":"creator","highlights":["263/263"],"github_repo":{"owner":"cochranblock","name":"atsisbroken","url":"https://github.com/cochranblock/atsisbroken"}}"#;
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn project_without_github_repo_serializes_repo_as_null() {
+        // Option<RepoRef> = None must serialize as `null`, not be
+        // omitted — so the wire format is stable across v0 → v1.
+        let proj = Project {
+            name: "private project".into(),
+            description: "personal".into(),
+            ..Default::default()
+        };
+        let got = serde_json::to_string(&proj).unwrap();
+        assert!(got.contains(r#""github_repo":null"#));
+    }
+
+    #[test]
+    fn compensation_json_shape_is_stable() {
+        let c = Compensation {
+            salary_expectation_min: Some(150_000),
+            salary_expectation_max: Some(220_000),
+            salary_currency: "USD".into(),
+            compensation_notes: "open to equity-heavy".into(),
+            desired_base: Some(170_000),
+            desired_variable: Some(20_000),
+            desired_equity: "0.1%".into(),
+        };
+        let got = serde_json::to_string(&c).unwrap();
+        let want = r#"{"salary_expectation_min":150000,"salary_expectation_max":220000,"salary_currency":"USD","compensation_notes":"open to equity-heavy","desired_base":170000,"desired_variable":20000,"desired_equity":"0.1%"}"#;
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn demographics_default_is_all_empty() {
+        // Default Demographics must be inert — no field set means
+        // "user has not chosen to disclose anything." This is the
+        // *baseline* the run loop sees when the user has never
+        // touched demographics; it must trigger zero autofills.
+        let d = Demographics::default();
+        assert!(d.gender.is_empty());
+        assert!(d.race_ethnicity.is_empty());
+        assert!(d.veteran_status.is_empty());
+        assert!(d.disability_status.is_empty());
+        assert!(d.lgbtq_self_id.is_empty());
+    }
+
+    #[test]
+    fn profile_demographics_default_is_none_not_empty_struct() {
+        // Hard contract: a Profile that has never had demographics
+        // populated should have `demographics: None`, not
+        // `Some(Demographics::default())`. The Option discriminator
+        // is the run loop's guard — `None` means "skip every EEO
+        // field"; Some-with-empty-struct would still mean "user
+        // opted in but left blank" which is a different signal.
+        assert!(Profile::default().demographics.is_none());
+    }
+
+    #[test]
+    fn profile_compensation_default_is_none() {
+        // Same contract as demographics — None means "skip salary
+        // fields"; Some with blank min/max means "user opted in but
+        // left blank" which the run loop treats differently.
+        assert!(Profile::default().compensation.is_none());
+    }
+
+    #[test]
+    fn repo_ref_round_trip() {
+        let r = RepoRef {
+            owner: "cochranblock".into(),
+            name: "atsisbroken".into(),
+            url: "https://github.com/cochranblock/atsisbroken".into(),
+        };
+        let s = serde_json::to_string(&r).unwrap();
+        let back: RepoRef = serde_json::from_str(&s).unwrap();
+        assert_eq!(r, back);
+    }
+
+    #[test]
+    fn experience_v0_toml_loads_with_phase_g_defaults() {
+        // An older Experience entry (just the 5 original fields)
+        // must parse cleanly with new fields at defaults.
+        let v0 = r#"
+            company = "Acme Co"
+            title   = "Engineer III"
+            start   = "2020-01"
+            end     = "2024-06"
+            bullets = ["shipped X", "led Y"]
+        "#;
+        let e: Experience = toml::from_str(v0).unwrap();
+        assert_eq!(e.company, "Acme Co");
+        assert_eq!(e.location, "");
+        assert_eq!(e.employment_type, "");
+        assert!(!e.can_we_contact);
+    }
+
+    #[test]
+    fn education_v0_toml_loads_with_phase_g_defaults() {
+        let v0 = r#"
+            school = "State U"
+            degree = "BS"
+            field  = "CS"
+            start  = "2016"
+            end    = "2020"
+        "#;
+        let ed: Education = toml::from_str(v0).unwrap();
+        assert_eq!(ed.school, "State U");
+        assert!(ed.honors.is_empty());
+        assert_eq!(ed.minor, "");
+        assert_eq!(ed.thesis_title, "");
     }
 
     // ─── Mode / Feedback / Delivery ───────────────────────────────────────
