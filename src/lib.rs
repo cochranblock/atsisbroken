@@ -151,6 +151,38 @@ pub struct Profile {
     /// autofill on its own.
     #[serde(default)]
     pub demographics: Option<Demographics>,
+    /// Structured work authorization (citizenship country, status,
+    /// sponsorship needed, security clearance, remote/relocation
+    /// preference). Additive — the legacy `work_authorization: String`
+    /// stays for backward compat. When both are populated the
+    /// classifier prefers the structured form.
+    #[serde(default)]
+    pub work_auth: Option<WorkAuth>,
+    /// Academic / industry publications.
+    #[serde(default)]
+    pub publications: Vec<Publication>,
+    /// Patents granted or pending.
+    #[serde(default)]
+    pub patents: Vec<Patent>,
+    /// Awards / recognitions / honors at the professional (not
+    /// academic) level. Academic honors live on Education.honors.
+    #[serde(default)]
+    pub awards: Vec<Award>,
+    /// Professional references the user is willing to share with
+    /// employers. Empty when the user prefers "available on request."
+    #[serde(default)]
+    pub references: Vec<Reference>,
+    /// Application ledger — atsisbroken's own record of where the
+    /// user has applied via the tool. Appended automatically by
+    /// the run loop when a submission completes (Phase 1.5 F flow).
+    #[serde(default)]
+    pub applications: Vec<Application>,
+    /// User-authored free-form answer slots. The answer composer
+    /// (Phase K) fills these via verbatim source synthesis (GitHub
+    /// + Blog inventories) when the user has opted in; the user
+    /// can also write them by hand. Either way, output is verbatim.
+    #[serde(default)]
+    pub free_form: FreeFormAnswers,
     pub raw_resume_text: String,
 }
 
@@ -422,6 +454,223 @@ pub struct Demographics {
     /// than bool so users can decline without us inferring false.
     #[serde(default)]
     pub lgbtq_self_id: String,
+}
+
+// ─── Phase G Tier 2 — work authorization, history, free-form ──────────────
+
+/// US work-eligibility classification. Free-form `Other(String)` keeps
+/// the door open for international categories we haven't enumerated.
+/// Default is `Other(String::new())` — empty escape hatch — so an
+/// unspecified work_auth deserializes without us picking a category
+/// for the user.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkAuthStatus {
+    Citizen,
+    PermanentResident,
+    H1B,
+    Opt,
+    Ead,
+    Tn,
+    OptionalPracticalTraining,
+    RequireSponsorship,
+    Other(String),
+}
+
+impl Default for WorkAuthStatus {
+    fn default() -> Self {
+        WorkAuthStatus::Other(String::new())
+    }
+}
+
+/// US security-clearance levels (lowest → highest). `Other(String)`
+/// for non-US clearances or the rare case of a tenant-specific tier.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SecurityClearance {
+    /// Explicit "no clearance held" — different from
+    /// `Other(String::new())` which means "not specified."
+    None,
+    PublicTrust,
+    Confidential,
+    Secret,
+    TopSecret,
+    TsSci,
+    Other(String),
+}
+
+impl Default for SecurityClearance {
+    fn default() -> Self {
+        SecurityClearance::Other(String::new())
+    }
+}
+
+/// Remote/onsite preference. Default `Flexible` reads as "user
+/// hasn't expressed a preference"; pickers can prompt explicitly.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RemotePreference {
+    Remote,
+    Hybrid,
+    OnSite,
+    Flexible,
+}
+
+impl Default for RemotePreference {
+    fn default() -> Self {
+        RemotePreference::Flexible
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct WorkAuth {
+    /// ISO-3166-1 alpha-3 (e.g. "USA", "GBR"). Empty when not set.
+    #[serde(default)]
+    pub citizenship_country: String,
+    #[serde(default)]
+    pub status: WorkAuthStatus,
+    #[serde(default)]
+    pub visa_sponsorship_required: bool,
+    #[serde(default)]
+    pub security_clearance: SecurityClearance,
+    /// Whether the user is open to relocating for a role.
+    #[serde(default)]
+    pub relocation_willingness: bool,
+    /// Free-form region preferences ("West Coast US", "EMEA",
+    /// "Bay Area only"). Empty when no preference expressed.
+    #[serde(default)]
+    pub region_preferences: Vec<String>,
+    #[serde(default)]
+    pub remote_preference: RemotePreference,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct Publication {
+    pub title: String,
+    #[serde(default)]
+    pub authors: Vec<String>,
+    /// Conference, journal, or publisher name.
+    pub venue: String,
+    /// "YYYY" or "YYYY-MM" — free-form so users match what's on the
+    /// publication itself.
+    pub date: String,
+    #[serde(default)]
+    pub url: String,
+    /// Digital Object Identifier — empty when not assigned.
+    #[serde(default)]
+    pub doi: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct Patent {
+    pub title: String,
+    /// Patent number (e.g. "US10,123,456 B2") or application number.
+    pub number: String,
+    pub issued_date: String,
+    #[serde(default)]
+    pub inventors: Vec<String>,
+    #[serde(default)]
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct Award {
+    pub name: String,
+    pub issuer: String,
+    pub date: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct Reference {
+    pub name: String,
+    /// "Manager", "Direct report", "Peer", "Mentor", etc.
+    pub relationship: String,
+    #[serde(default)]
+    pub company: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub phone: String,
+}
+
+/// Application status as the user knows it. The run loop appends
+/// `Submitted` automatically; transitions to other states are user-
+/// driven (via a future `atsisbroken applications mark <url> <status>`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplicationStatus {
+    Submitted,
+    Interviewed,
+    Offer,
+    Rejected,
+    Ghosted,
+    Withdrawn,
+}
+
+impl Default for ApplicationStatus {
+    fn default() -> Self {
+        ApplicationStatus::Submitted
+    }
+}
+
+/// One ATS application the user submitted via atsisbroken. Appended
+/// when the run loop confirms a successful submit.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct Application {
+    pub company: String,
+    pub role: String,
+    /// RFC3339 timestamp of submission.
+    pub submitted_at: String,
+    /// Job posting URL (or the form URL if no posting URL exists).
+    pub url: String,
+    #[serde(default)]
+    pub status: ApplicationStatus,
+    #[serde(default)]
+    pub notes: String,
+}
+
+/// User-authored answers to common ATS prompt patterns. The question
+/// classifier (Phase J) routes recognized prompts to one of these
+/// slots; the answer composer (Phase K) then either uses the user's
+/// authored value or composes from GitHub / Blog inventories.
+///
+/// Each slot is `Option<String>`. None = "user has not authored a
+/// response"; the composer is allowed to synthesize from inventories.
+/// `Some("")` = "user explicitly cleared this slot — never autofill,
+/// even from a verbatim source." Two distinct signals.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct FreeFormAnswers {
+    #[serde(default)]
+    pub elevator_pitch: Option<String>,
+    #[serde(default)]
+    pub why_this_role_template: Option<String>,
+    #[serde(default)]
+    pub biggest_technical_challenge: Option<String>,
+    #[serde(default)]
+    pub proudest_project: Option<String>,
+    #[serde(default)]
+    pub biggest_failure_and_lesson: Option<String>,
+    #[serde(default)]
+    pub five_year_plan: Option<String>,
+    #[serde(default)]
+    pub strengths: Option<String>,
+    #[serde(default)]
+    pub weaknesses: Option<String>,
+    #[serde(default)]
+    pub management_style: Option<String>,
+    #[serde(default)]
+    pub collaboration_example: Option<String>,
+    /// Catch-all for prompts not covered by the named slots. Key is
+    /// a question hash or descriptive name; value is the user's
+    /// authored answer. Phase K caches accepted composer outputs here
+    /// keyed by question hash, so the same question on a different
+    /// ATS reuses the answer.
+    #[serde(default)]
+    pub custom: std::collections::BTreeMap<String, String>,
 }
 
 /// One ATS form field as seen by the DOM extractor. The classifier's input.
@@ -1843,6 +2092,350 @@ mod tests {
         assert!(ed.honors.is_empty());
         assert_eq!(ed.minor, "");
         assert_eq!(ed.thesis_title, "");
+    }
+
+    // ─── Phase G Tier 2 — work auth + history + free-form ────────────────
+
+    #[test]
+    fn profile_tier2_defaults_are_inert() {
+        // Hard contracts: a default Profile has nothing in the Tier 2
+        // collections that could trigger an autofill. The run loop
+        // reads None / empty as "skip"; presence of any value is the
+        // user's explicit gesture.
+        let p = Profile::default();
+        assert!(p.work_auth.is_none(),
+            "work_auth must default to None (skip) — Some(default) would mean opted-in-blank");
+        assert!(p.publications.is_empty());
+        assert!(p.patents.is_empty());
+        assert!(p.awards.is_empty());
+        assert!(p.references.is_empty());
+        assert!(p.applications.is_empty());
+        // free_form slots are all None until the user authors something
+        // OR the composer caches an accepted answer.
+        assert!(p.free_form.elevator_pitch.is_none());
+        assert!(p.free_form.proudest_project.is_none());
+        assert!(p.free_form.custom.is_empty());
+    }
+
+    #[test]
+    fn profile_v0_toml_loads_with_tier2_defaults() {
+        // The exact v0 shape from before Tier 2 must still parse; new
+        // collections come up empty and Optional fields come up None.
+        let v0 = r#"
+            full_name = "Jane Doe"
+            email = "jane@example.com"
+            phone = ""
+            address = ""
+            linkedin = ""
+            github = ""
+            website = ""
+            work_authorization = "Citizen"
+            years_experience = 0
+            raw_resume_text = ""
+            experience = []
+            education = []
+            skills = []
+        "#;
+        let p: Profile = toml::from_str(v0).unwrap();
+        assert!(p.work_auth.is_none());
+        assert!(p.publications.is_empty());
+        assert!(p.patents.is_empty());
+        assert!(p.awards.is_empty());
+        assert!(p.references.is_empty());
+        assert!(p.applications.is_empty());
+        assert_eq!(p.free_form, FreeFormAnswers::default());
+        // Legacy work_authorization String preserved (no breaking change).
+        assert_eq!(p.work_authorization, "Citizen");
+    }
+
+    #[test]
+    fn work_auth_status_serializes_snake_case() {
+        assert_eq!(serde_json::to_string(&WorkAuthStatus::Citizen).unwrap(), "\"citizen\"");
+        assert_eq!(serde_json::to_string(&WorkAuthStatus::PermanentResident).unwrap(), "\"permanent_resident\"");
+        assert_eq!(serde_json::to_string(&WorkAuthStatus::H1B).unwrap(), "\"h1_b\"");
+        assert_eq!(serde_json::to_string(&WorkAuthStatus::Opt).unwrap(), "\"opt\"");
+        assert_eq!(serde_json::to_string(&WorkAuthStatus::RequireSponsorship).unwrap(), "\"require_sponsorship\"");
+        // The Other variant carries a String — serializes as
+        // {"other": "..."} via serde's default tagged enum behavior.
+        let s = serde_json::to_string(&WorkAuthStatus::Other("DACA".into())).unwrap();
+        assert_eq!(s, r#"{"other":"DACA"}"#);
+    }
+
+    #[test]
+    fn work_auth_status_default_is_empty_other_escape_hatch() {
+        // The default reads as "user has not specified a status" —
+        // distinct from any concrete category. The run loop must NOT
+        // autofill a work-auth dropdown when status is Other("").
+        assert_eq!(WorkAuthStatus::default(), WorkAuthStatus::Other(String::new()));
+    }
+
+    #[test]
+    fn security_clearance_none_distinct_from_unspecified() {
+        // SecurityClearance::None means the user explicitly stated
+        // "I do not hold any clearance." That's a real ATS-form
+        // answer. SecurityClearance::Other("") means "user hasn't
+        // told us either way." A form asking "do you hold a
+        // clearance?" must distinguish these — auto-filling "no"
+        // when the user simply hasn't stated would put words in
+        // their mouth.
+        assert_ne!(SecurityClearance::default(), SecurityClearance::None);
+        assert_eq!(SecurityClearance::default(), SecurityClearance::Other(String::new()));
+    }
+
+    #[test]
+    fn remote_preference_default_is_flexible() {
+        // "Flexible" reads as "user hasn't expressed a preference."
+        // Any UI surfacing remote preference should prompt rather
+        // than treat the default as a strong signal.
+        assert_eq!(RemotePreference::default(), RemotePreference::Flexible);
+    }
+
+    #[test]
+    fn remote_preference_serializes_snake_case() {
+        assert_eq!(serde_json::to_string(&RemotePreference::Remote).unwrap(), "\"remote\"");
+        assert_eq!(serde_json::to_string(&RemotePreference::Hybrid).unwrap(), "\"hybrid\"");
+        assert_eq!(serde_json::to_string(&RemotePreference::OnSite).unwrap(), "\"on_site\"");
+        assert_eq!(serde_json::to_string(&RemotePreference::Flexible).unwrap(), "\"flexible\"");
+    }
+
+    #[test]
+    fn application_status_default_is_submitted() {
+        // Run loop appends every successful submission as Submitted.
+        // Other states are user-driven transitions; the default that
+        // gets stored is what the run loop writes.
+        assert_eq!(ApplicationStatus::default(), ApplicationStatus::Submitted);
+    }
+
+    #[test]
+    fn application_status_serializes_snake_case() {
+        assert_eq!(serde_json::to_string(&ApplicationStatus::Submitted).unwrap(), "\"submitted\"");
+        assert_eq!(serde_json::to_string(&ApplicationStatus::Interviewed).unwrap(), "\"interviewed\"");
+        assert_eq!(serde_json::to_string(&ApplicationStatus::Offer).unwrap(), "\"offer\"");
+        assert_eq!(serde_json::to_string(&ApplicationStatus::Rejected).unwrap(), "\"rejected\"");
+        assert_eq!(serde_json::to_string(&ApplicationStatus::Ghosted).unwrap(), "\"ghosted\"");
+        assert_eq!(serde_json::to_string(&ApplicationStatus::Withdrawn).unwrap(), "\"withdrawn\"");
+    }
+
+    #[test]
+    fn work_auth_json_shape_is_stable() {
+        let wa = WorkAuth {
+            citizenship_country: "USA".into(),
+            status: WorkAuthStatus::Citizen,
+            visa_sponsorship_required: false,
+            security_clearance: SecurityClearance::None,
+            relocation_willingness: true,
+            region_preferences: vec!["West Coast US".into()],
+            remote_preference: RemotePreference::Hybrid,
+        };
+        let got = serde_json::to_string(&wa).unwrap();
+        let want = r#"{"citizenship_country":"USA","status":"citizen","visa_sponsorship_required":false,"security_clearance":"none","relocation_willingness":true,"region_preferences":["West Coast US"],"remote_preference":"hybrid"}"#;
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn publication_json_shape_is_stable() {
+        let pub_ = Publication {
+            title: "On the Verbatim Source Property".into(),
+            authors: vec!["Cochran, M.".into()],
+            venue: "USENIX Security".into(),
+            date: "2026-08".into(),
+            url: "https://example.org/paper".into(),
+            doi: "10.1234/example.5678".into(),
+        };
+        let got = serde_json::to_string(&pub_).unwrap();
+        let want = r#"{"title":"On the Verbatim Source Property","authors":["Cochran, M."],"venue":"USENIX Security","date":"2026-08","url":"https://example.org/paper","doi":"10.1234/example.5678"}"#;
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn patent_json_shape_is_stable() {
+        let p = Patent {
+            title: "Method for verifiable autofill".into(),
+            number: "US10,123,456 B2".into(),
+            issued_date: "2024-03-12".into(),
+            inventors: vec!["Cochran, M.".into()],
+            url: "https://patents.google.com/patent/US10123456B2".into(),
+        };
+        let got = serde_json::to_string(&p).unwrap();
+        let want = r#"{"title":"Method for verifiable autofill","number":"US10,123,456 B2","issued_date":"2024-03-12","inventors":["Cochran, M."],"url":"https://patents.google.com/patent/US10123456B2"}"#;
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn award_json_shape_is_stable() {
+        let a = Award {
+            name: "Outstanding Contribution Award".into(),
+            issuer: "Open Source Foundation".into(),
+            date: "2025".into(),
+            description: "For sustained Rust ecosystem maintenance".into(),
+        };
+        let got = serde_json::to_string(&a).unwrap();
+        let want = r#"{"name":"Outstanding Contribution Award","issuer":"Open Source Foundation","date":"2025","description":"For sustained Rust ecosystem maintenance"}"#;
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn reference_json_shape_is_stable() {
+        let r = Reference {
+            name: "Pat Doe".into(),
+            relationship: "Direct Manager".into(),
+            company: "Acme Co".into(),
+            title: "VP Engineering".into(),
+            email: "pat.doe@acme.example".into(),
+            phone: "+1-555-0188".into(),
+        };
+        let got = serde_json::to_string(&r).unwrap();
+        let want = r#"{"name":"Pat Doe","relationship":"Direct Manager","company":"Acme Co","title":"VP Engineering","email":"pat.doe@acme.example","phone":"+1-555-0188"}"#;
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn application_json_shape_is_stable() {
+        let a = Application {
+            company: "Example Corp".into(),
+            role: "Senior Engineer".into(),
+            submitted_at: "2026-05-06T10:11:12Z".into(),
+            url: "https://example.com/jobs/123".into(),
+            status: ApplicationStatus::Submitted,
+            notes: "applied via Greenhouse".into(),
+        };
+        let got = serde_json::to_string(&a).unwrap();
+        let want = r#"{"company":"Example Corp","role":"Senior Engineer","submitted_at":"2026-05-06T10:11:12Z","url":"https://example.com/jobs/123","status":"submitted","notes":"applied via Greenhouse"}"#;
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn free_form_answers_json_shape_is_stable() {
+        // Default is all None / empty — the all-null shape pins the
+        // wire format for fresh profiles. Adding a slot in the future
+        // will FAIL this test and force an explicit migration.
+        let f = FreeFormAnswers::default();
+        let got = serde_json::to_string(&f).unwrap();
+        let want = r#"{"elevator_pitch":null,"why_this_role_template":null,"biggest_technical_challenge":null,"proudest_project":null,"biggest_failure_and_lesson":null,"five_year_plan":null,"strengths":null,"weaknesses":null,"management_style":null,"collaboration_example":null,"custom":{}}"#;
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn free_form_none_vs_empty_some_are_distinct_signals() {
+        // None: "user has not authored a response — composer may
+        // synthesize from inventories."
+        // Some(""): "user explicitly cleared this slot — never
+        // autofill, even from a verbatim source."
+        // Phase K reads these differently. Pin the type-level
+        // distinction so it can't drift.
+        let none_signal = FreeFormAnswers::default();
+        let cleared = FreeFormAnswers {
+            elevator_pitch: Some(String::new()),
+            ..Default::default()
+        };
+        assert_ne!(none_signal, cleared);
+        assert!(none_signal.elevator_pitch.is_none());
+        assert_eq!(cleared.elevator_pitch.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn application_status_round_trip() {
+        // Every variant must round-trip through JSON. A drift in
+        // discriminant order or rename would leak into existing
+        // user ledgers.
+        for s in [
+            ApplicationStatus::Submitted,
+            ApplicationStatus::Interviewed,
+            ApplicationStatus::Offer,
+            ApplicationStatus::Rejected,
+            ApplicationStatus::Ghosted,
+            ApplicationStatus::Withdrawn,
+        ] {
+            let j = serde_json::to_string(&s).unwrap();
+            let back: ApplicationStatus = serde_json::from_str(&j).unwrap();
+            assert_eq!(s, back);
+        }
+    }
+
+    #[test]
+    fn work_auth_status_round_trip_including_other() {
+        for s in [
+            WorkAuthStatus::Citizen,
+            WorkAuthStatus::PermanentResident,
+            WorkAuthStatus::H1B,
+            WorkAuthStatus::Opt,
+            WorkAuthStatus::Ead,
+            WorkAuthStatus::Tn,
+            WorkAuthStatus::OptionalPracticalTraining,
+            WorkAuthStatus::RequireSponsorship,
+            WorkAuthStatus::Other("DACA".into()),
+            WorkAuthStatus::Other(String::new()),
+        ] {
+            let j = serde_json::to_string(&s).unwrap();
+            let back: WorkAuthStatus = serde_json::from_str(&j).unwrap();
+            assert_eq!(s, back);
+        }
+    }
+
+    #[test]
+    fn profile_v1_tier2_full_round_trip() {
+        // Set every Tier 2 field non-default; round-trip via TOML.
+        let p = Profile {
+            full_name: "Jane Doe".into(),
+            email: "jane@example.com".into(),
+            phone: "+1-555-0100".into(),
+            address: "123 Main St".into(),
+            work_auth: Some(WorkAuth {
+                citizenship_country: "USA".into(),
+                status: WorkAuthStatus::Citizen,
+                visa_sponsorship_required: false,
+                security_clearance: SecurityClearance::Secret,
+                relocation_willingness: true,
+                region_preferences: vec!["West Coast US".into(), "EMEA".into()],
+                remote_preference: RemotePreference::Hybrid,
+            }),
+            publications: vec![Publication {
+                title: "Paper".into(),
+                authors: vec!["Doe, J.".into()],
+                venue: "Conf".into(),
+                date: "2025".into(),
+                url: String::new(),
+                doi: String::new(),
+            }],
+            patents: vec![Patent {
+                title: "Widget".into(),
+                number: "US123".into(),
+                issued_date: "2024".into(),
+                inventors: vec!["Doe, J.".into()],
+                url: String::new(),
+            }],
+            awards: vec![Award {
+                name: "Award".into(),
+                issuer: "Org".into(),
+                date: "2023".into(),
+                description: String::new(),
+            }],
+            references: vec![Reference {
+                name: "Pat".into(),
+                relationship: "Manager".into(),
+                company: "Acme".into(),
+                title: "VP".into(),
+                email: "pat@acme.example".into(),
+                phone: String::new(),
+            }],
+            applications: vec![Application {
+                company: "Example".into(),
+                role: "SWE".into(),
+                submitted_at: "2026-05-06T10:11:12Z".into(),
+                url: "https://example.com/jobs/1".into(),
+                status: ApplicationStatus::Interviewed,
+                notes: String::new(),
+            }],
+            free_form: FreeFormAnswers {
+                elevator_pitch: Some("I build verifiable software.".into()),
+                strengths: Some("Systems design.".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let toml_text = toml::to_string(&p).unwrap();
+        let back: Profile = toml::from_str(&toml_text).unwrap();
+        assert_eq!(p, back);
     }
 
     // ─── Mode / Feedback / Delivery ───────────────────────────────────────
