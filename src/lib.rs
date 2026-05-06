@@ -955,6 +955,41 @@ pub fn predict_field_key(f: &FieldDescriptor) -> &'static str {
     if has("github") {
         return "github";
     }
+    // Phase G presence platforms — placed BEFORE the website
+    // catch-all because some forms ask for several at once. Each
+    // platform name is distinctive enough for substring match;
+    // no false positives observed across the 5 vendor fixtures.
+    if has("gitlab") {
+        return "gitlab";
+    }
+    if has("bitbucket") {
+        return "bitbucket";
+    }
+    if has("bluesky") {
+        return "bluesky";
+    }
+    if has("mastodon") {
+        return "mastodon";
+    }
+    // "stackoverflow" or "stack overflow" or "stackexchange" — the
+    // hay_norm form joins tokens with spaces, so "stack overflow"
+    // matches as a phrase. The bare lowercased "stackoverflow"
+    // matches via has().
+    if has("stackoverflow") || has_phrase("stack overflow") {
+        return "stackoverflow";
+    }
+    // Twitter / X. We key on "twitter" (still the dominant ATS
+    // form name); /x.com/ as a URL pattern is left to the URL
+    // signal route via the field's value at fill time.
+    if has("twitter") {
+        return "twitter";
+    }
+    // "blog" is distinctive when it appears as a label/name;
+    // requires word-equality so "weblog" / arbitrary substrings
+    // don't trip it.
+    if has_word("blog") {
+        return "blog";
+    }
     if has("website") || has("portfolio") {
         return "website";
     }
@@ -1002,6 +1037,25 @@ pub fn predict_field_key(f: &FieldDescriptor) -> &'static str {
     }
     if (has("year") || has("yrs")) && has("exp") {
         return "years_experience";
+    }
+    // Compensation routes. "salary" alone is unambiguous; bare
+    // "compensation" is ambiguous (could be a section header) so
+    // we require an "expect"/"desired" qualifier or an
+    // expectation-shaped phrase. Returns the umbrella key
+    // "salary_expectation"; the run loop currently surfaces no
+    // value (Compensation lives under Profile.compensation:
+    // Option<Compensation> and is not yet wired into
+    // profile_value_for_key — Phase K's answer composer is the
+    // natural home for compensation rendering, since salary
+    // forms often want context like "open to equity-heavy"
+    // rather than a bare number).
+    if has("salary")
+        || has_phrase("compensation expectation")
+        || has_phrase("expected compensation")
+        || has_phrase("desired compensation")
+        || has_phrase("expected pay")
+    {
+        return "salary_expectation";
     }
     // Name disambiguation (specificity-ordered):
     //   first/given/forename + name → first_name
@@ -1079,7 +1133,27 @@ pub fn profile_value_for_key<'a>(profile: &'a Profile, key: &str) -> Option<&'a 
         "linkedin" => primary(&profile.linkedin),
         "github" => primary(&profile.github),
         "website" => primary(&profile.website),
+        // Phase G OnlinePresence platforms. Each falls back to the
+        // legacy Profile.website only for `portfolio` (which is the
+        // semantic equivalent for designers/PMs); the others have
+        // no meaningful legacy fallback — empty means "user has not
+        // shared this handle" and the run loop skips the field.
+        "gitlab" => primary(&profile.presence.gitlab),
+        "bitbucket" => primary(&profile.presence.bitbucket),
+        "blog" => primary(&profile.presence.blog),
+        "twitter" => primary(&profile.presence.twitter),
+        "bluesky" => primary(&profile.presence.bluesky),
+        "mastodon" => primary(&profile.presence.mastodon),
+        "stackoverflow" => primary(&profile.presence.stackoverflow),
+        "portfolio" => fallback(&profile.presence.portfolio, &profile.website),
         "work_authorization" => primary(&profile.work_authorization),
+        // salary_expectation is classified but not surfaced as a
+        // borrowable string here. Compensation is structured (numeric
+        // min/max + currency + notes); rendering it requires
+        // formatting that owns the result. Phase K's answer composer
+        // handles compensation; for now the keyword classifier
+        // identifies the field but the run loop skips it.
+        "salary_expectation" => return None,
         _ => return None,
     };
     if v.is_empty() {
@@ -1565,7 +1639,12 @@ mod tests {
     }
     #[test]
     fn predict_unknown_returns_empty_not_a_guess() {
-        assert_eq!(predict_field_key(&fd("Salary expectation", "", "", "", "", "number")), "");
+        // "Salary expectation" used to live here as a
+        // not-yet-classified example; Phase G Tier 3 added a
+        // salary_expectation route, so we substitute a still-
+        // genuinely-unknown prompt. Anything not in the vocabulary
+        // must return "" — never invent a route.
+        assert_eq!(predict_field_key(&fd("Hobbies", "", "", "", "", "text")), "");
         assert_eq!(predict_field_key(&fd("", "", "", "", "", "text")), "");
     }
     #[test]
@@ -1625,6 +1704,164 @@ mod tests {
         );
         assert_eq!(key, "");
         assert_eq!(conf, 0.0);
+    }
+
+    // ─── Phase G Tier 3 — new presence + salary classifier routes ────────
+
+    #[test]
+    fn predict_gitlab_routes_to_gitlab() {
+        assert_eq!(predict_field_key(&fd("GitLab URL", "", "", "", "", "url")), "gitlab");
+        assert_eq!(predict_field_key(&fd("", "", "", "gitlab_handle", "", "text")), "gitlab");
+    }
+
+    #[test]
+    fn predict_bitbucket_routes_to_bitbucket() {
+        assert_eq!(predict_field_key(&fd("Bitbucket", "", "", "", "", "url")), "bitbucket");
+    }
+
+    #[test]
+    fn predict_twitter_routes_to_twitter() {
+        assert_eq!(predict_field_key(&fd("Twitter", "", "", "", "", "url")), "twitter");
+        assert_eq!(predict_field_key(&fd("Twitter / X handle", "", "", "", "", "text")), "twitter");
+    }
+
+    #[test]
+    fn predict_bluesky_routes_to_bluesky() {
+        assert_eq!(predict_field_key(&fd("Bluesky", "", "", "", "", "url")), "bluesky");
+        assert_eq!(predict_field_key(&fd("Bluesky handle", "", "", "", "", "text")), "bluesky");
+    }
+
+    #[test]
+    fn predict_mastodon_routes_to_mastodon() {
+        assert_eq!(predict_field_key(&fd("Mastodon", "", "", "", "", "url")), "mastodon");
+    }
+
+    #[test]
+    fn predict_stackoverflow_routes_to_stackoverflow() {
+        assert_eq!(predict_field_key(&fd("StackOverflow URL", "", "", "", "", "url")), "stackoverflow");
+        assert_eq!(predict_field_key(&fd("Stack Overflow profile", "", "", "", "", "url")), "stackoverflow");
+    }
+
+    #[test]
+    fn predict_blog_routes_to_blog() {
+        // Word-equality on "blog" — substring "weblog" must NOT
+        // match (no false positive on that token).
+        assert_eq!(predict_field_key(&fd("Blog URL", "", "", "", "", "url")), "blog");
+        assert_eq!(predict_field_key(&fd("Personal blog", "", "", "", "", "url")), "blog");
+    }
+
+    #[test]
+    fn predict_blog_does_not_match_inside_unrelated_words() {
+        // The word-equality guard is what stops "weblog" from
+        // matching the blog route. The has() route over the raw
+        // hay would false-positive; has_word() doesn't.
+        // Synthetic but worth pinning.
+        let f = fd("Weblog server URL", "", "", "weblog_url", "", "url");
+        // Should NOT classify as blog. Falls through to website
+        // since "weblog" doesn't match has("blog") via word-equality
+        // and "URL" alone goes to website? Actually nothing in our
+        // vocab routes generic "url" — so this falls through to
+        // unknown. Either is acceptable; the contract is "not blog".
+        let got = predict_field_key(&f);
+        assert_ne!(got, "blog");
+    }
+
+    #[test]
+    fn predict_salary_expectation_routes_to_salary_expectation() {
+        assert_eq!(
+            predict_field_key(&fd("Salary expectation", "", "", "", "", "number")),
+            "salary_expectation"
+        );
+        assert_eq!(
+            predict_field_key(&fd("Expected salary", "", "", "", "", "number")),
+            "salary_expectation"
+        );
+        assert_eq!(
+            predict_field_key(&fd("Compensation expectation", "", "", "", "", "text")),
+            "salary_expectation"
+        );
+        assert_eq!(
+            predict_field_key(&fd("Expected pay", "", "", "", "", "number")),
+            "salary_expectation"
+        );
+    }
+
+    #[test]
+    fn predict_bare_compensation_does_not_match_salary() {
+        // Bare "Compensation" as a section header alone (no
+        // qualifier) must NOT match — it's ambiguous between a
+        // header and an actual ask. Caller would surface this
+        // as unknown.
+        let got = predict_field_key(&fd("Compensation", "", "", "", "", "text"));
+        assert_ne!(got, "salary_expectation");
+    }
+
+    #[test]
+    fn profile_value_for_key_resolves_new_presence_keys() {
+        let p = Profile {
+            presence: OnlinePresence {
+                gitlab: "https://gitlab.com/janedoe".into(),
+                bitbucket: "https://bitbucket.org/janedoe".into(),
+                blog: "https://janedoe.dev/blog".into(),
+                twitter: "@janedoe".into(),
+                bluesky: "@janedoe.bsky.social".into(),
+                mastodon: "@janedoe@mastodon.social".into(),
+                stackoverflow: "https://stackoverflow.com/users/123".into(),
+                portfolio: "https://janedoe.dev/portfolio".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(profile_value_for_key(&p, "gitlab"), Some("https://gitlab.com/janedoe"));
+        assert_eq!(profile_value_for_key(&p, "bitbucket"), Some("https://bitbucket.org/janedoe"));
+        assert_eq!(profile_value_for_key(&p, "blog"), Some("https://janedoe.dev/blog"));
+        assert_eq!(profile_value_for_key(&p, "twitter"), Some("@janedoe"));
+        assert_eq!(profile_value_for_key(&p, "bluesky"), Some("@janedoe.bsky.social"));
+        assert_eq!(profile_value_for_key(&p, "mastodon"), Some("@janedoe@mastodon.social"));
+        assert_eq!(profile_value_for_key(&p, "stackoverflow"), Some("https://stackoverflow.com/users/123"));
+        assert_eq!(profile_value_for_key(&p, "portfolio"), Some("https://janedoe.dev/portfolio"));
+    }
+
+    #[test]
+    fn profile_value_for_key_portfolio_falls_back_to_website() {
+        // Portfolio has a meaningful legacy fallback to the
+        // top-level `website` field (designer/PM convention:
+        // many use the same URL for both). Pinned so the
+        // fallback can't be silently removed.
+        let p = Profile {
+            website: "https://janedoe.dev".into(),
+            ..Default::default()
+        };
+        assert_eq!(profile_value_for_key(&p, "portfolio"), Some("https://janedoe.dev"));
+    }
+
+    #[test]
+    fn profile_value_for_key_empty_presence_returns_none() {
+        // Empty platform field with no legacy fallback (everything
+        // except portfolio) returns None — the run loop reads
+        // None as "skip this field" rather than "fill with empty".
+        let p = Profile::default();
+        assert!(profile_value_for_key(&p, "gitlab").is_none());
+        assert!(profile_value_for_key(&p, "twitter").is_none());
+        assert!(profile_value_for_key(&p, "mastodon").is_none());
+    }
+
+    #[test]
+    fn profile_value_for_key_salary_expectation_returns_none() {
+        // Pinned: salary_expectation is classified but not yet
+        // surfaced as a borrowable string. When Phase K wires
+        // compensation rendering, this contract changes — the
+        // test will fail and force an explicit migration.
+        let p = Profile {
+            compensation: Some(Compensation {
+                salary_expectation_min: Some(150_000),
+                salary_expectation_max: Some(220_000),
+                salary_currency: "USD".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(profile_value_for_key(&p, "salary_expectation").is_none());
     }
 
     #[test]
