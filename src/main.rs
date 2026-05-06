@@ -134,6 +134,34 @@ enum Cmd {
     /// per-key acceptance, top-rejected keys, and how many entries
     /// the correction overlay holds.
     Feedback,
+    /// Save a GitHub Personal Access Token (and optionally the
+    /// handle) so `sync-github` can pull at the 5000 req/h rate.
+    /// Without a token, sync still works but is rate-limited to
+    /// 60 req/h. Token file is chmod 600 on Unix.
+    ConnectGithub {
+        /// GitHub login. Stored in the inventory file at sync time;
+        /// can be passed here so sync-github knows whose repos to
+        /// fetch without a flag.
+        #[arg(long)]
+        handle: Option<String>,
+        /// Personal Access Token. Reads from stdin if omitted.
+        /// `public_repo` + `read:user` scopes are sufficient.
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// Pull public-repo metadata, README excerpts, and recent
+    /// commit messages from GitHub into
+    /// `~/.atsisbroken/github_inventory.json`. Used by Phase K's
+    /// answer composer for verbatim-source free-form answers
+    /// ("describe a project," "biggest technical challenge,"
+    /// etc.).
+    SyncGithub {
+        /// GitHub login. Falls back to the handle stored in
+        /// `~/.atsisbroken/github_inventory.json` from a prior
+        /// `connect-github`.
+        #[arg(long)]
+        handle: Option<String>,
+    },
     /// Print the current configuration.
     Status,
 }
@@ -166,6 +194,8 @@ async fn main() -> Result<()> {
         Some(Cmd::Bridge) => cmd_bridge().await,
         Some(Cmd::InstallBridge { extension_id, binary }) => cmd_install_bridge(extension_id, binary),
         Some(Cmd::Feedback) => cmd_feedback().await,
+        Some(Cmd::ConnectGithub { handle, token }) => cmd_connect_github(handle, token).await,
+        Some(Cmd::SyncGithub { handle }) => cmd_sync_github(handle).await,
         Some(Cmd::Status) => cmd_status(profile_override).await,
         Some(Cmd::Tui) => cmd_tui().await,
         Some(Cmd::TuiSnapshot { tab, width, height }) => cmd_tui_snapshot(tab, width, height).await,
@@ -732,6 +762,107 @@ async fn cmd_status(profile_override: Option<std::path::PathBuf>) -> Result<()> 
                 .unwrap_or_default()
         ),
         None => println!("default browser: (not detected)"),
+    }
+    Ok(())
+}
+
+async fn cmd_connect_github(handle: Option<String>, token: Option<String>) -> Result<()> {
+    use atsisbroken::github;
+    use std::io::Read;
+
+    paths::ensure_dir().map_err(|e| anyhow!("ensure dir: {e}"))?;
+
+    // Resolve the token: --token wins; otherwise read from stdin.
+    // Stdin reads support piping (e.g., `pass show github | atsisbroken connect-github`).
+    let token = match token {
+        Some(t) => t,
+        None => {
+            eprintln!("Paste your GitHub Personal Access Token, then press Ctrl+D:");
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf)?;
+            buf
+        }
+    };
+    let token = token.trim();
+    if token.is_empty() {
+        return Err(anyhow!(
+            "no token provided (pass --token or paste before EOF). \
+             Anonymous mode is supported by `sync-github` directly — \
+             omit `connect-github` if you don't have a token."
+        ));
+    }
+    let token_path = paths::github_token_path();
+    github::save_github_token(token, &token_path)
+        .map_err(|e| anyhow!("write token: {e}"))?;
+    eprintln!("token saved to {} (chmod 600 on Unix)", token_path.display());
+
+    if let Some(h) = handle {
+        // Persist the handle alongside the token by stashing it in
+        // the inventory file's `handle` field; sync-github reads it
+        // when the user runs sync without --handle.
+        let inv_path = paths::github_inventory_path();
+        let mut inv = github::GithubInventory::load_from(&inv_path)
+            .map_err(|e| anyhow!("load inventory: {e}"))?;
+        inv.handle = h.clone();
+        inv.save_to(&inv_path)
+            .map_err(|e| anyhow!("save inventory: {e}"))?;
+        eprintln!("handle saved: {h}");
+    }
+    eprintln!("next: run `atsisbroken sync-github` to fetch your repos.");
+    Ok(())
+}
+
+async fn cmd_sync_github(handle: Option<String>) -> Result<()> {
+    use atsisbroken::github;
+
+    paths::ensure_dir().map_err(|e| anyhow!("ensure dir: {e}"))?;
+
+    // Resolve the handle: --handle wins; otherwise pull from the
+    // existing inventory (set by `connect-github --handle`).
+    let inv_path = paths::github_inventory_path();
+    let handle = match handle {
+        Some(h) => h,
+        None => {
+            let inv = github::GithubInventory::load_from(&inv_path)
+                .map_err(|e| anyhow!("load inventory: {e}"))?;
+            if inv.handle.is_empty() {
+                return Err(anyhow!(
+                    "no handle on disk and --handle not provided. \
+                     run `atsisbroken connect-github --handle <login>` first."
+                ));
+            }
+            inv.handle
+        }
+    };
+
+    let token_path = paths::github_token_path();
+    let token = github::load_github_token(&token_path)
+        .map_err(|e| anyhow!("read token: {e}"))?;
+    if token.is_none() {
+        eprintln!(
+            "no token at {} — using anonymous mode (rate-limited 60 req/h).",
+            token_path.display()
+        );
+    }
+
+    eprintln!("syncing GitHub for {handle}…");
+    let inv = github::sync_user_inventory(&handle, token.as_deref())
+        .await
+        .map_err(|e| anyhow!("sync: {e}"))?;
+    inv.save_to(&inv_path)
+        .map_err(|e| anyhow!("save inventory: {e}"))?;
+
+    eprintln!(
+        "synced {} public repos ({} top-N deep-fetched) to {}",
+        inv.public_repos.len(),
+        inv.public_repos
+            .iter()
+            .filter(|r| !r.readme_excerpts.is_empty() || !r.recent_commit_messages.is_empty())
+            .count(),
+        inv_path.display()
+    );
+    if inv.public_repos.is_empty() {
+        eprintln!("(handle has no public repos, or the user is private.)");
     }
     Ok(())
 }
