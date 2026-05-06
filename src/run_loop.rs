@@ -259,6 +259,7 @@ async fn run_inner(
     let mut prompted = 0usize;
     let mut feedback_events: Vec<Feedback> = Vec::new();
 
+    let mut to_verify: Vec<(String, String)> = Vec::new(); // (id, expected value)
     for d in &descriptors {
         let (key, confidence) = predict_field_key_with_confidence(d);
         let value = profile_value_for_key(profile, key);
@@ -279,6 +280,7 @@ async fn run_inner(
             FillDecision::Fill { value } => {
                 let _ = page.evaluate(fill_js(&d.id, value)).await;
                 filled += 1;
+                to_verify.push((d.id.clone(), value.to_string()));
                 feedback_events.push(Feedback {
                     field: d.clone(),
                     predicted: key.to_string(),
@@ -291,6 +293,7 @@ async fn run_inner(
                 if prompt_user(&d.label, key, value)? {
                     let _ = page.evaluate(fill_js(&d.id, value)).await;
                     filled += 1;
+                    to_verify.push((d.id.clone(), value.to_string()));
                     feedback_events.push(Feedback {
                         field: d.clone(),
                         predicted: key.to_string(),
@@ -310,6 +313,24 @@ async fn run_inner(
         }
     }
     let _ = prompted; // retained for future summary surface
+
+    // ─── Workday re-render verifier ────────────────────────────────────
+    // After all fills land, wait 250 ms (Workday's destroy-and-recreate
+    // cycle on the field's parent container fires within ~150-200 ms)
+    // and re-check every filled field. Any that came back empty get
+    // ONE retry. Two failures in a row → surface to the user; we do
+    // NOT silently keep retrying.
+    let re_filled =
+        verify_and_retry(&page, &to_verify, Duration::from_millis(250)).await?;
+    let final_filled = filled.saturating_sub(re_filled.failed);
+    let retried_filled = re_filled.retried_filled;
+    if re_filled.retried_total > 0 {
+        eprintln!(
+            "  re-render verifier: {} field(s) blanked after fill — {} re-filled successfully, {} still empty",
+            re_filled.retried_total, retried_filled, re_filled.failed
+        );
+    }
+    let _ = (final_filled, retried_filled);
 
     let screenshot_path = if let Some(dir) = screenshot_dir {
         std::fs::create_dir_all(dir).context("mkdir screenshot dir")?;
@@ -342,6 +363,70 @@ async fn run_inner(
         screenshot_path,
         feedback_events,
     })
+}
+
+/// JS that reads back the current value of a field by id. Used by the
+/// re-render verifier to detect Workday's destroy-and-recreate cycle.
+fn read_back_js(id: &str) -> String {
+    format!(
+        "(() => {{ const el = document.getElementById('{id}'); return el ? el.value : null; }})()"
+    )
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct VerifyOutcome {
+    /// How many fields came back empty (or wrong value) after the
+    /// post-fill settle window — i.e. how many Workday re-rendered.
+    pub retried_total: usize,
+    /// Of the retried, how many took the second fill successfully.
+    pub retried_filled: usize,
+    /// Of the retried, how many STILL came back empty after the second
+    /// fill — surfaced to the user as a hard failure for that field.
+    pub failed: usize,
+}
+
+/// Wait `settle` ms, then read back every field in `to_verify` and
+/// retry one fill per blanked field. ONE retry — we do not loop.
+async fn verify_and_retry(
+    page: &chromiumoxide::Page,
+    to_verify: &[(String, String)],
+    settle: Duration,
+) -> Result<VerifyOutcome> {
+    if to_verify.is_empty() {
+        return Ok(VerifyOutcome::default());
+    }
+    tokio::time::sleep(settle).await;
+    let mut outcome = VerifyOutcome::default();
+    for (id, expected) in to_verify {
+        let read = page
+            .evaluate(read_back_js(id))
+            .await
+            .ok()
+            .and_then(|v| v.into_value::<Option<String>>().ok())
+            .flatten()
+            .unwrap_or_default();
+        if read == *expected {
+            continue; // fill stuck
+        }
+        // Field was blanked or mutated. Retry once.
+        outcome.retried_total += 1;
+        let _ = page.evaluate(fill_js(id, expected)).await;
+        // Short settle for the second fill to commit.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let after = page
+            .evaluate(read_back_js(id))
+            .await
+            .ok()
+            .and_then(|v| v.into_value::<Option<String>>().ok())
+            .flatten()
+            .unwrap_or_default();
+        if after == *expected {
+            outcome.retried_filled += 1;
+        } else {
+            outcome.failed += 1;
+        }
+    }
+    Ok(outcome)
 }
 
 /// TrainingWheels prompt: ask the user yes/no per field on stderr +
@@ -416,6 +501,26 @@ mod tests {
     fn fill_js_uses_id_in_getelementbyid() {
         let js = fill_js("legalNameSection_firstName", "Jane");
         assert!(js.contains("getElementById('legalNameSection_firstName')"));
+    }
+
+    #[test]
+    fn read_back_js_targets_correct_id_and_returns_value() {
+        // Pin the read-back JS shape — the verifier depends on the
+        // result being el.value (not innerText, not getAttribute).
+        let js = read_back_js("legalNameSection_firstName");
+        assert!(js.contains("getElementById('legalNameSection_firstName')"));
+        assert!(js.contains("el.value"));
+        // Returns null for missing elements so we can distinguish
+        // "Workday hid the field" from "field is genuinely empty".
+        assert!(js.contains("null"));
+    }
+
+    #[test]
+    fn verify_outcome_default_is_zeroed() {
+        let o = VerifyOutcome::default();
+        assert_eq!(o.retried_total, 0);
+        assert_eq!(o.retried_filled, 0);
+        assert_eq!(o.failed, 0);
     }
 
     #[test]

@@ -610,20 +610,10 @@ mod tests {
         assert_eq!(p, back);
     }
 
-    #[test]
-    fn field_descriptor_round_trip() {
-        let f = FieldDescriptor {
-            label: "Email".into(),
-            placeholder: "you@example.com".into(),
-            aria_label: "Email address".into(),
-            name: "email".into(),
-            id: "input-email".into(),
-            kind: "email".into(),
-        };
-        let json = serde_json::to_string(&f).unwrap();
-        let back: FieldDescriptor = serde_json::from_str(&json).unwrap();
-        assert_eq!(f, back);
-    }
+    // (field_descriptor_round_trip removed — was self-licking; the
+    // wire-format invariant is enforced by
+    // `field_descriptor_json_shape_is_stable` which pins the literal
+    // JSON bytes, not just the round-trip equality.)
 
     #[test]
     fn mode_default_is_training_wheels() {
@@ -670,8 +660,13 @@ mod tests {
         assert_eq!(back.len(), 2);
     }
 
+    /// Pin Feedback's on-disk JSON shape against literal bytes. This
+    /// is the format that lands in `~/.atsisbroken/feedback.jsonl`
+    /// and the format the bridge speaks across the Native Messaging
+    /// boundary. A drift in field names or default behaviors would
+    /// silently break the consumer side.
     #[test]
-    fn feedback_round_trip() {
+    fn feedback_json_shape_is_stable() {
         let fb = Feedback {
             field: FieldDescriptor {
                 label: "Email".into(),
@@ -685,9 +680,9 @@ mod tests {
             actual: "email".into(),
             accepted: true,
         };
-        let json = serde_json::to_string(&fb).unwrap();
-        let back: Feedback = serde_json::from_str(&json).unwrap();
-        assert_eq!(fb, back);
+        let got = serde_json::to_string(&fb).unwrap();
+        let want = r#"{"field":{"label":"Email","placeholder":"","aria_label":"","name":"email","id":"","kind":"email"},"predicted":"email","actual":"email","accepted":true}"#;
+        assert_eq!(got, want);
     }
 
     // ─── seed corpus coverage ─────────────────────────────────────────────

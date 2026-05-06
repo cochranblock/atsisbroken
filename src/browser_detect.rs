@@ -494,11 +494,16 @@ mod tests {
         assert!(!BrowserKind::Firefox.supports_cdp());
     }
 
-    /// Smoke: on the dev box, `default_browser()` either returns Some or
-    /// None without panicking. We don't assert the value because CI hosts
-    /// have no default-browser preference.
+    /// Real value: this fn shells out to `xdg-settings` (Linux) /
+    /// `defaults read` (macOS) / scans PATH (Windows). Each branch
+    /// could panic on an unexpected exit code, malformed plist line,
+    /// or a missing env var. The test guards every cfg-gated branch
+    /// against a regression that introduces an `unwrap` on a
+    /// non-Some path. We don't assert the *value* because CI hosts
+    /// have no default-browser preference — but the *path coverage*
+    /// (executes without panic) is the contract.
     #[test]
-    fn default_browser_does_not_panic() {
+    fn default_browser_path_does_not_panic_on_real_host() {
         let _ = default_browser();
     }
 }
