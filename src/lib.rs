@@ -28,6 +28,7 @@ pub mod bridge;
 pub mod browser_detect;
 pub mod cdp;
 pub mod config;
+pub mod github;
 pub mod learning;
 pub mod run_loop;
 

@@ -49,6 +49,26 @@ pub fn model_path() -> PathBuf {
     p
 }
 
+/// `~/.atsisbroken/github_inventory.json` — Phase I sync output.
+/// Public-repo metadata + README excerpts + recent commit messages.
+/// Never ships the user's source code, only structural metadata.
+pub fn github_inventory_path() -> PathBuf {
+    let mut p = atsisbroken_dir();
+    p.push("github_inventory.json");
+    p
+}
+
+/// `~/.atsisbroken/github_token` — Phase I auth.
+/// Plain-text token file, chmod 600 on Unix, owner-only on Windows
+/// via best-effort ACL. Never logged, never crosses the Native
+/// Messaging bridge, never appears in any TUI tab. The token is
+/// optional; without it sync is rate-limited at 60 req/h.
+pub fn github_token_path() -> PathBuf {
+    let mut p = atsisbroken_dir();
+    p.push("github_token");
+    p
+}
+
 /// Per-Chrome-family Native Messaging host manifest target. Returns the
 /// directory the host JSON belongs in, per OS. None ⇒ unsupported on this
 /// platform (Windows uses the registry; not implemented yet).
