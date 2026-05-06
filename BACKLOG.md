@@ -123,14 +123,40 @@ After R3 + R5 + R7 close: 1.0 candidate.
 ## Now — Profile + GitHub cluster (see `docs/PLAN_PROFILE_AND_GITHUB.md`)
 
 - [ ] **G**   Expanded `Profile` (~75 fields) + v0→v1 migration
-- [ ] **H**   `init` walks every field group, with parser-derived defaults
+- [ ] **H**   `init` walks every field group, with parser-derived
+      defaults (blog tag clusters seed skill / interest suggestions
+      when blog inventory is present)
 - [ ] **I**   `connect-github` + `sync-github` → `~/.atsisbroken/github_inventory.json`
-- [ ] **J**   Question classifier: 12 prompt patterns → answer slots
-- [ ] **K**   Answer composer: verbatim-source free-form answers + audit log
+- [ ] **I.5** `connect-blog <url>` + `sync-blog` →
+      `~/.atsisbroken/blog_inventory.json`. RSS / Atom / sitemap
+      discovery (8 standard feed paths in order), HTML-to-text
+      extraction (`<article>`/`<main>`/largest-`<div>` heuristic,
+      strips scripts/styles), 16 KiB body cap per post, URL
+      tracking-param hygiene, `robots.txt` respected, 1 req/sec
+      default rate limit. On-disk format is `Vec<BlogInventory>` —
+      multi-blog supported (tech blog + personal site + Substack).
+      Substack paid mode opt-in via `--auth-cookie` (separate
+      chmod-600 inventory file). Used for narrative/behavioral
+      free-form answers ("tell me about a time when", "engineering
+      philosophy") and as a structured-field source during `init`.
+- [ ] **J**   Question classifier: ~17 prompt patterns →
+      answer slots, with per-pattern source preference (Profile /
+      GitHub / Blog) and fall-through ordering
+- [ ] **K**   Answer composer: verbatim-source free-form answers +
+      audit log. Per-source citation shapes: GitHub cites
+      (repo, commit_sha); Blog cites (URL, published, paragraph
+      offset); Profile cites (field name). Mixed-source answers
+      cite all participating sources.
 - [ ] **L.5** Custom patterns at `~/.atsisbroken/custom_patterns.toml`:
-      user-defined question routes + extractors + answer slots, all
-      regex-safe (size_limit, compile/exec timeouts, verbatim-only output)
-- [ ] **L**   TUI tabs 4 (Profile) + 5 (GitHub)
+      user-defined question routes + extractors + answer slots,
+      all regex-safe (size_limit, compile/exec timeouts,
+      verbatim-only output). Extractor sources span Profile,
+      GitHub (`github:readme_excerpts`, `github:recent_commit_messages`),
+      and Blog (`blog:posts.title|excerpt|body_text|tags`).
+- [ ] **L**   TUI tab 4 (Profile) + tab 5 (Sources: collapsible
+      `[ github ]` and `[ blog ]` sections; 5-tab nav preserved
+      so existing `tabs_constant_matches_documented_count` test
+      stays green)
 
 ## Now — other
 

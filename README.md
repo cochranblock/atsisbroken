@@ -98,7 +98,7 @@ Topic-specific (in `docs/`):
 - [`docs/UI_UX_ANALYSIS.md`](docs/UI_UX_ANALYSIS.md) — visual hierarchy, accessibility, gaps & recs
 - [`docs/UI_UX_SIMULATION.md`](docs/UI_UX_SIMULATION.md) — persona × environment walkthroughs (P1–P7, E1–E6)
 - [`docs/PLAN_BROWSER_AUTOMATION.md`](docs/PLAN_BROWSER_AUTOMATION.md) — TUI → launch browser → navigate → autofill, plus install-when-missing
-- [`docs/PLAN_PROFILE_AND_GITHUB.md`](docs/PLAN_PROFILE_AND_GITHUB.md) — expanded ~75-field schema + GitHub inventory + verbatim-source free-form answers + user-defined regex hooks
+- [`docs/PLAN_PROFILE_AND_GITHUB.md`](docs/PLAN_PROFILE_AND_GITHUB.md) — expanded ~75-field schema + GitHub inventory + Blog inventory (RSS / Atom / sitemap discovery) + verbatim-source free-form answers (per-source citation: repo+commit_sha for GitHub, URL+date for Blog) + user-defined regex hooks across any source
 - [`docs/ATS_FIXTURE_SOURCES.md`](docs/ATS_FIXTURE_SOURCES.md) — sources for the 5 vendor fixture renderers (Greenhouse / Lever / Workday / iCIMS / Ashby), with author attribution
 - [`docs/PERFECTION_PLAN.md`](docs/PERFECTION_PLAN.md) — research-driven path to 1.0 (vendor census → DOM capture → accuracy benchmark → trained classifier → multi-page Workday → anti-bot → legal → interviews → beta)
 - [`docs/research/ATS_MARKET_SHARE_2026Q2.md`](docs/research/ATS_MARKET_SHARE_2026Q2.md) — R1 results. Ashby 49% / Greenhouse 30% / Workday 0.9% in HN-startup cohort (HN-biased; broader sample needed)

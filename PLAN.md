@@ -115,24 +115,32 @@ classifier over hand-engineered features.
     `--chaos` (Shadow → Chaos) with confirmation prompts.
 18. UX sim re-runs against the live app screenshots (not stub output).
 
-### Phase 4.5 — Profile schema + GitHub answers (Detailed in `docs/PLAN_PROFILE_AND_GITHUB.md`)
+### Phase 4.5 — Profile schema + verbatim-source answers (Detailed in `docs/PLAN_PROFILE_AND_GITHUB.md`)
 
 The profile grows from 11 fields to ~75 to cover every category of
-ATS question. A GitHub inventory lives alongside profile.toml; free-
-form answers are composed verbatim from the inventory + profile,
-attributable to commit messages, README sentences, and Profile
-field values. Users extend via `custom_patterns.toml` (regex-based
-question routes + extractors), all sandboxed (no exec, verbatim
-output only, regex-size limits).
+ATS question. **Two parallel verbatim sources** sit alongside
+profile.toml: a **GitHub inventory** (commit messages, README
+excerpts, repo stats) covering technical/factual claims, and a
+**Blog inventory** (post titles, dated excerpts, full body text
+from RSS / Atom / sitemap discovery) covering narrative,
+behavioral, and "tell me about a time when" questions. Free-form
+answers are composed verbatim from any source in the pool —
+Profile fields, GitHub repo evidence, or blog posts — with
+citation and audit log per emission. Blog content also seeds
+structured Profile defaults during `init` (skill tag clusters,
+top-N interests). Users extend via `custom_patterns.toml`
+(regex-based question routes + extractors over any source), all
+sandboxed (no exec, verbatim output only, regex-size limits).
 
 Sub-phases G–L:
-  G   Expanded `Profile` + v0→v1 migration
-  H   `init` walks every field group
-  I   `connect-github` + `sync-github`
-  J   Question classifier
-  K   Answer composer + audit log
-  L.5 Custom patterns hook
-  L   TUI Profile + GitHub tabs (5-tab nav)
+  G    Expanded `Profile` + v0→v1 migration
+  H    `init` walks every field group (blog tags seed defaults)
+  I    `connect-github` + `sync-github`
+  I.5  `connect-blog` + `sync-blog` (RSS/Atom/sitemap discovery)
+  J    Question classifier (routes to Profile / GitHub / Blog)
+  K    Answer composer + audit log (per-source citation shapes)
+  L.5  Custom patterns hook (extractors over any source)
+  L    TUI Profile + Sources tabs (5-tab nav)
 
 ### Phase 5 — Ecosystem (target: end of week 12)
 
