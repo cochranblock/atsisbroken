@@ -129,6 +129,11 @@ enum Cmd {
         #[arg(long)]
         binary: Option<String>,
     },
+    /// Summarize the local feedback ledger
+    /// (`~/.atsisbroken/feedback.jsonl`). Read-only; shows totals,
+    /// per-key acceptance, top-rejected keys, and how many entries
+    /// the correction overlay holds.
+    Feedback,
     /// Print the current configuration.
     Status,
 }
@@ -160,6 +165,7 @@ async fn main() -> Result<()> {
         Some(Cmd::Export { out }) => cmd_export(out).await,
         Some(Cmd::Bridge) => cmd_bridge().await,
         Some(Cmd::InstallBridge { extension_id, binary }) => cmd_install_bridge(extension_id, binary),
+        Some(Cmd::Feedback) => cmd_feedback().await,
         Some(Cmd::Status) => cmd_status(profile_override).await,
         Some(Cmd::Tui) => cmd_tui().await,
         Some(Cmd::TuiSnapshot { tab, width, height }) => cmd_tui_snapshot(tab, width, height).await,
@@ -637,6 +643,44 @@ fn cmd_install_bridge(extension_id: String, binary: Option<String>) -> Result<()
         version(),
         manifest_path.display()
     );
+    Ok(())
+}
+
+async fn cmd_feedback() -> Result<()> {
+    use atsisbroken::learning::{CorrectionOverlay, FeedbackStats};
+    let path = paths::feedback_jsonl_path();
+    let q = FeedbackQueue::load_from(&path).context("load feedback queue")?;
+    let stats = FeedbackStats::from_queue(&q.events);
+    let overlay = CorrectionOverlay::from_queue(&q.events);
+
+    println!("atsisbroken {}", version());
+    println!("feedback ledger: {}", path.display());
+    println!();
+    if stats.total == 0 {
+        println!("  (no events yet — run `atsisbroken run --url <ATS-URL>` to start collecting)");
+        return Ok(());
+    }
+    println!(
+        "  total events: {}     accepted: {}     rejected: {}",
+        stats.total, stats.accepted, stats.rejected
+    );
+    println!("  correction overlay holds {} prior decision(s)", overlay.len());
+    if !stats.top_rejected_keys.is_empty() {
+        println!();
+        println!("  top rejected keys (run loop will skip these silently next time):");
+        for (k, n) in &stats.top_rejected_keys {
+            println!("    {n:>4}  {k}");
+        }
+    }
+    if !stats.per_key_accepted.is_empty() {
+        println!();
+        println!("  accepted-by-key (graduated to auto-fill in any mode):");
+        let mut sorted: Vec<(&String, &usize)> = stats.per_key_accepted.iter().collect();
+        sorted.sort_by(|a, b| b.1.cmp(a.1));
+        for (k, n) in sorted.iter().take(8) {
+            println!("    {n:>4}  {k}");
+        }
+    }
     Ok(())
 }
 

@@ -130,6 +130,19 @@ After R3 + R5 + R7 close: 1.0 candidate.
       `~/.atsisbroken/config.toml`. `--yes` skips prompt; `--back`
       steps backward (Chaos → Shadow → TrainingWheels). Refuses at
       either end with actionable error. Smoke-verified end-to-end.
+- [x] **Gap #7 — feedback consumer (`learning::CorrectionOverlay`)**.
+      The accumulated feedback.jsonl now actually changes future
+      runs. Field fingerprint = (label, placeholder, aria_label,
+      name, kind), DOM id deliberately excluded so dynamic Workday
+      ids don't bust the cache. Most-recent decision wins. Run
+      loop short-circuits BEFORE mode policy: prior `Rejected` →
+      Skip silently in any mode; prior `Accepted` → Fill in any
+      mode (overrides TrainingWheels prompt and Shadow threshold).
+      New `atsisbroken feedback` subcommand summarizes total /
+      accepted / rejected / overlay size / top rejected keys.
+      Live smoke verified: 1st run prompts y/n; 2nd run takes the
+      same form and skips both prompts (overlay carries decisions).
+
 - [ ] `atsisbroken sync-config --destination ...` — toggle
       `FeedbackDelivery::SendWhenOnline`.
 - [ ] `atsisbroken status` — show *current* mode (not just default)

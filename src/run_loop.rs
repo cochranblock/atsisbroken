@@ -22,7 +22,9 @@
 //! the submit button — the function exits after fill+screenshot+report.
 
 use crate::{
-    config::Config, paths, predict_field_key_with_confidence, profile_value_for_key, version,
+    config::Config,
+    learning::{CorrectionOverlay, UserDecision},
+    paths, predict_field_key_with_confidence, profile_value_for_key, version,
     ConfidenceThreshold, Feedback, FeedbackQueue, FieldDescriptor, Mode, Profile,
 };
 use anyhow::{Context, Result};
@@ -87,12 +89,18 @@ pub enum SkipReason {
     NoDomId,
     /// Shadow mode: classifier confidence below threshold.
     BelowConfidenceThreshold,
+    /// User previously rejected this field shape; overlay short-
+    /// circuits the prompt/fill in any mode.
+    UserPreviouslyRejected,
 }
 
 /// Apply the autonomy-mode policy to one field. Pure; no I/O.
 /// `value` is `Some(s)` when the profile has a non-empty value for the
-/// classified key. `decide` borrows it into the returned variant so
-/// the caller doesn't need to re-look-up or unwrap.
+/// classified key. `prior` is the user's prior decision on this field
+/// shape (from [`CorrectionOverlay`]) — overrides mode policy:
+/// `Some(Rejected)` skips silently, `Some(Accepted)` fills without
+/// prompting (useful in TrainingWheels mode after the user has
+/// graduated specific fields).
 pub fn decide<'a>(
     mode: Mode,
     key: &'static str,
@@ -100,6 +108,7 @@ pub fn decide<'a>(
     threshold: ConfidenceThreshold,
     value: Option<&'a str>,
     has_dom_id: bool,
+    prior: Option<UserDecision>,
 ) -> FillDecision<'a> {
     if key.is_empty() {
         return FillDecision::Skip(SkipReason::NotClassified);
@@ -109,6 +118,17 @@ pub fn decide<'a>(
     };
     if !has_dom_id {
         return FillDecision::Skip(SkipReason::NoDomId);
+    }
+    // Overlay short-circuit FIRST. The user's prior judgment beats
+    // the mode policy in either direction.
+    match prior {
+        Some(UserDecision::Rejected) => {
+            return FillDecision::Skip(SkipReason::UserPreviouslyRejected);
+        }
+        Some(UserDecision::Accepted) => {
+            return FillDecision::Fill { value };
+        }
+        None => {}
     }
     match mode {
         Mode::TrainingWheels => FillDecision::Prompt { value, key },
@@ -163,7 +183,21 @@ pub async fn run_against_url(
     url: &str,
     screenshot_dir: Option<&Path>,
 ) -> Result<RunSummary> {
+    // Unique user-data-dir per launch — otherwise back-to-back runs
+    // (or parallel atsisbroken processes) hit chromium's
+    // ProcessSingleton lock on the default `/tmp/chromiumoxide-runner/`.
+    // The dir is left on disk; chromium needs it for the lifetime of
+    // the subprocess, and rm-on-Drop races with chromium's own cleanup.
+    let user_data_dir = std::env::temp_dir().join(format!(
+        "atsisbroken_chromium_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
     let cfg = chromiumoxide::BrowserConfig::builder()
+        .user_data_dir(&user_data_dir)
         .build()
         .map_err(|e| anyhow::anyhow!("browser config: {e}"))?;
 
@@ -199,13 +233,24 @@ async fn run_inner(
         serde_json::from_value(snap).context("snapshot deserialize")?;
 
     let cfg = Config::load().unwrap_or_default();
+    // Build the correction overlay from the existing feedback queue.
+    // The user's prior yes/no decisions override mode policy per
+    // field shape. (See `learning::CorrectionOverlay`.)
+    let prior_queue = FeedbackQueue::load_from(&paths::feedback_jsonl_path())
+        .unwrap_or_default();
+    let overlay = CorrectionOverlay::from_queue(&prior_queue.events);
     eprintln!(
-        "  mode: {:?}{}",
+        "  mode: {:?}{}{}",
         cfg.mode,
         if cfg.mode == Mode::Shadow {
             format!(" (confidence threshold: {:.2})", cfg.confidence_threshold.0)
         } else {
             String::new()
+        },
+        if overlay.is_empty() {
+            String::new()
+        } else {
+            format!(" (overlay: {} prior decision(s))", overlay.len())
         }
     );
 
@@ -217,6 +262,7 @@ async fn run_inner(
     for d in &descriptors {
         let (key, confidence) = predict_field_key_with_confidence(d);
         let value = profile_value_for_key(profile, key);
+        let prior = overlay.decision_for(d);
         let decision = decide(
             cfg.mode,
             key,
@@ -224,6 +270,7 @@ async fn run_inner(
             cfg.confidence_threshold,
             value,
             !d.id.is_empty(),
+            prior,
         );
         match decision {
             FillDecision::Skip(_reason) => {
@@ -404,31 +451,31 @@ mod tests {
 
     #[test]
     fn decide_skip_when_classifier_returns_unknown() {
-        let d = decide(Mode::Chaos, "", 0.0, t(), Some("anything"), true);
+        let d = decide(Mode::Chaos, "", 0.0, t(), Some("anything"), true, None);
         assert_eq!(d, FillDecision::Skip(SkipReason::NotClassified));
     }
 
     #[test]
     fn decide_skip_when_no_profile_value() {
-        let d = decide(Mode::Chaos, "linkedin", 1.0, t(), None, true);
+        let d = decide(Mode::Chaos, "linkedin", 1.0, t(), None, true, None);
         assert_eq!(d, FillDecision::Skip(SkipReason::NoProfileValue));
     }
 
     #[test]
     fn decide_skip_when_no_dom_id() {
-        let d = decide(Mode::Chaos, "email", 1.0, t(), Some("j@e.com"), false);
+        let d = decide(Mode::Chaos, "email", 1.0, t(), Some("j@e.com"), false, None);
         assert_eq!(d, FillDecision::Skip(SkipReason::NoDomId));
     }
 
     #[test]
     fn decide_chaos_fills_classified_field() {
-        let d = decide(Mode::Chaos, "email", 1.0, t(), Some("j@e.com"), true);
+        let d = decide(Mode::Chaos, "email", 1.0, t(), Some("j@e.com"), true, None);
         assert_eq!(d, FillDecision::Fill { value: "j@e.com" });
     }
 
     #[test]
     fn decide_training_wheels_always_prompts_classified_fields() {
-        let d = decide(Mode::TrainingWheels, "email", 1.0, t(), Some("j@e.com"), true);
+        let d = decide(Mode::TrainingWheels, "email", 1.0, t(), Some("j@e.com"), true, None);
         assert_eq!(
             d,
             FillDecision::Prompt {
@@ -440,7 +487,7 @@ mod tests {
 
     #[test]
     fn decide_shadow_fills_above_threshold() {
-        let d = decide(Mode::Shadow, "email", 0.90, t(), Some("j@e.com"), true);
+        let d = decide(Mode::Shadow, "email", 0.90, t(), Some("j@e.com"), true, None);
         assert_eq!(d, FillDecision::Fill { value: "j@e.com" });
     }
 
@@ -448,13 +495,13 @@ mod tests {
     fn decide_shadow_fills_at_threshold() {
         // Property: threshold is inclusive (>=). Catches accidental
         // > → >= flip in `ConfidenceThreshold::passes`.
-        let d = decide(Mode::Shadow, "email", 0.85, t(), Some("j@e.com"), true);
+        let d = decide(Mode::Shadow, "email", 0.85, t(), Some("j@e.com"), true, None);
         assert_eq!(d, FillDecision::Fill { value: "j@e.com" });
     }
 
     #[test]
     fn decide_shadow_skips_below_threshold() {
-        let d = decide(Mode::Shadow, "email", 0.84, t(), Some("j@e.com"), true);
+        let d = decide(Mode::Shadow, "email", 0.84, t(), Some("j@e.com"), true, None);
         assert_eq!(d, FillDecision::Skip(SkipReason::BelowConfidenceThreshold));
     }
 
@@ -462,7 +509,7 @@ mod tests {
     fn decide_skip_precedence_unknown_beats_threshold() {
         // If the field can't be classified at all, it doesn't matter
         // what mode/threshold says. NotClassified wins.
-        let d = decide(Mode::Shadow, "", 1.0, t(), Some("anything"), true);
+        let d = decide(Mode::Shadow, "", 1.0, t(), Some("anything"), true, None);
         assert_eq!(d, FillDecision::Skip(SkipReason::NotClassified));
     }
 
@@ -470,7 +517,81 @@ mod tests {
     fn decide_skip_precedence_no_value_beats_prompt() {
         // TrainingWheels would normally Prompt, but if the user has
         // no value to fill we skip rather than prompt for nothing.
-        let d = decide(Mode::TrainingWheels, "linkedin", 1.0, t(), None, true);
+        let d = decide(Mode::TrainingWheels, "linkedin", 1.0, t(), None, true, None);
+        assert_eq!(d, FillDecision::Skip(SkipReason::NoProfileValue));
+    }
+
+    #[test]
+    fn decide_overlay_rejected_short_circuits_in_any_mode() {
+        // The user previously rejected this field shape. Skip
+        // silently regardless of mode — don't re-prompt for what
+        // the user already declined.
+        for mode in [Mode::TrainingWheels, Mode::Shadow, Mode::Chaos] {
+            let d = decide(
+                mode,
+                "email",
+                1.0,
+                t(),
+                Some("j@e.com"),
+                true,
+                Some(UserDecision::Rejected),
+            );
+            assert_eq!(
+                d,
+                FillDecision::Skip(SkipReason::UserPreviouslyRejected),
+                "mode {:?} did not honor prior Rejected",
+                mode
+            );
+        }
+    }
+
+    #[test]
+    fn decide_overlay_accepted_skips_prompt_in_training_wheels() {
+        // The user previously accepted this exact field shape.
+        // TrainingWheels normally Prompts, but the user has already
+        // approved — don't re-ask. Auto-fill.
+        let d = decide(
+            Mode::TrainingWheels,
+            "email",
+            1.0,
+            t(),
+            Some("j@e.com"),
+            true,
+            Some(UserDecision::Accepted),
+        );
+        assert_eq!(d, FillDecision::Fill { value: "j@e.com" });
+    }
+
+    #[test]
+    fn decide_overlay_accepted_overrides_shadow_threshold() {
+        // Even if confidence is below threshold, a prior Accepted
+        // means the user has explicitly OK'd this field shape.
+        let d = decide(
+            Mode::Shadow,
+            "email",
+            0.10, // way below 0.85
+            t(),
+            Some("j@e.com"),
+            true,
+            Some(UserDecision::Accepted),
+        );
+        assert_eq!(d, FillDecision::Fill { value: "j@e.com" });
+    }
+
+    #[test]
+    fn decide_overlay_does_not_short_circuit_skip_precedence() {
+        // Even if the user previously accepted, we still skip when
+        // there's no profile value or no DOM id. Overlay can override
+        // mode policy but cannot manufacture a value or id.
+        let d = decide(
+            Mode::Chaos,
+            "linkedin",
+            1.0,
+            t(),
+            None, // no profile value
+            true,
+            Some(UserDecision::Accepted),
+        );
         assert_eq!(d, FillDecision::Skip(SkipReason::NoProfileValue));
     }
 
