@@ -89,9 +89,21 @@ After R3 + R5 + R7 close: 1.0 candidate.
       Visible win: Greenhouse-shape e2e screenshot now shows
       First name="Jane Q." and Last name="Doe" — different
       strings.
-- [ ] Split address into address_line1 / city / postal_code (same
-      issue — e2e shows three address fields all filled with the
-      same multi-part string).
+- [x] Split address into structured sub-fields. Profile gains
+      street1, street2, city, state, postal_code, country
+      (all #[serde(default)] for forward-compat). Classifier
+      disambiguates: postal_code (zip/postcode/postal) → city →
+      state (province/region) → country (nation) → street2
+      (address line 2 / apt / suite) → street1 (street, address
+      line 1) → bare "address" stays legacy single-line. Order
+      reshuffled so work_authorization wins over country before
+      address sub-fields fire (Workday's "authorized to work in
+      this country?" was misclassifying as country).
+      profile_value_for_key: each structured field falls back to
+      the legacy `address` string when empty (forward-compat for
+      older profiles). Live e2e fills 6/6 structured sub-fields:
+      Street=123 Main St, Apt=Apt 5, City=Anywhere, State=CA,
+      Zip=94000, Country=USA — all distinct.
 - [ ] **D**   `cdp::Session::fill` + `verify` — write value, dispatch
       input/change events, re-snapshot 250ms later for Workday
       re-render defense.

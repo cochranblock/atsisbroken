@@ -64,7 +64,28 @@ pub struct Profile {
     pub last_name: String,
     pub email: String,
     pub phone: String,
+    /// Legacy single-line address. Retained for forward compatibility
+    /// with profile.toml files that don't have structured sub-fields,
+    /// and for forms that ask for "Address" as a single string. The
+    /// resume parser populates this; the structured sub-fields below
+    /// are optional and populated only if the user edits them.
     pub address: String,
+    /// Structured address sub-fields. Empty by default; populated
+    /// either by user edit or (later) by a structured address parser
+    /// run over the legacy `address` line. profile_value_for_key
+    /// falls back to `address` when these are empty.
+    #[serde(default)]
+    pub street1: String,
+    #[serde(default)]
+    pub street2: String,
+    #[serde(default)]
+    pub city: String,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub postal_code: String,
+    #[serde(default)]
+    pub country: String,
     pub linkedin: String,
     pub github: String,
     pub website: String,
@@ -396,20 +417,47 @@ pub fn predict_field_key(f: &FieldDescriptor) -> &'static str {
     if has("website") || has("portfolio") {
         return "website";
     }
-    // Address sub-fields: most-specific first.
-    // postal_code beats "address" because "postal" + "address" can
-    // co-occur on the same field metadata.
+    // Work authorization checked BEFORE address sub-fields because the
+    // canonical phrasing "authorized to work in this country" contains
+    // the word "country" and would otherwise route to the country slot.
+    // The "authoriz"/"visa"/"sponsor" signals are unambiguous.
+    if has("authoriz") || has("visa") || has("sponsor") {
+        return "work_authorization";
+    }
+
+    // Address sub-fields, most-specific first. Word-equality so
+    // generic substrings ("address" inside "addressbar") don't
+    // false-positive on unrelated DOM ids.
     if has_word("postal") || has_word("postcode") || has_word("zip") {
         return "postal_code";
     }
     if has_word("city") {
-        return "address"; // city → address slot for now (Tier 2 will split)
+        return "city";
     }
-    if has_word("street") || has("address") {
+    if has_word("state") || has_word("province") || has_word("region") {
+        return "state";
+    }
+    if has_word("country") || has_word("nation") {
+        return "country";
+    }
+    // street1 vs street2: only fires if "line 2" or "address line 2"
+    // appears verbatim. Otherwise generic "street" / "address" → street1.
+    if has_phrase("address line 2") || has_phrase("line 2") || has_word("apartment") || has_word("apt") || has_word("suite") {
+        return "street2";
+    }
+    if has_word("street")
+        || has_phrase("address line 1")
+        || has_phrase("address line")
+        || has_phrase("street address")
+    {
+        return "street1";
+    }
+    // Bare "address" with no qualifier → legacy single-line. Most
+    // forms that say just "Address" mean street1 today, but we keep
+    // a route to the legacy `address` slot so older profiles still
+    // fill via the address fallback path.
+    if has("address") {
         return "address";
-    }
-    if has("authoriz") || has("visa") || has("sponsor") {
-        return "work_authorization";
     }
     if (has("year") || has("yrs")) && has("exp") {
         return "years_experience";
@@ -462,35 +510,35 @@ pub fn predict_field_key_with_confidence(f: &FieldDescriptor) -> (&'static str, 
 /// Resolve a classified key to the value the user has in their profile.
 /// Returns `None` for unknown / freetext / fields not in the schema.
 pub fn profile_value_for_key<'a>(profile: &'a Profile, key: &str) -> Option<&'a str> {
-    // first_name / last_name fall back to full_name when the user
-    // hasn't split their name (older profiles before this schema).
+    // Each key has a primary field and (where applicable) a fallback
+    // for forward-compat with profiles that haven't filled the
+    // structured sub-fields yet. Empty strings degrade to None so
+    // the run-loop's NoProfileValue branch treats unfilled fields
+    // as "skip", not "fill with empty".
+    let primary = |s: &'a str| -> &'a str { s };
+    let fallback = |s: &'a str, f: &'a str| -> &'a str {
+        if s.is_empty() { f } else { s }
+    };
     let v: &str = match key {
-        "full_name" => &profile.full_name,
-        "first_name" => {
-            if profile.first_name.is_empty() {
-                &profile.full_name
-            } else {
-                &profile.first_name
-            }
-        }
-        "last_name" => {
-            if profile.last_name.is_empty() {
-                &profile.full_name
-            } else {
-                &profile.last_name
-            }
-        }
-        "email" => &profile.email,
-        "phone" => &profile.phone,
-        "address" => &profile.address,
-        // postal_code falls back to the unstructured `address`
-        // string when no parsed sub-field exists. Tier 2 will add
-        // a real postal_code field on Profile.
-        "postal_code" => &profile.address,
-        "linkedin" => &profile.linkedin,
-        "github" => &profile.github,
-        "website" => &profile.website,
-        "work_authorization" => &profile.work_authorization,
+        "full_name" => primary(&profile.full_name),
+        "first_name" => fallback(&profile.first_name, &profile.full_name),
+        "last_name" => fallback(&profile.last_name, &profile.full_name),
+        "email" => primary(&profile.email),
+        "phone" => primary(&profile.phone),
+        // Structured address sub-fields. Each falls back to the
+        // legacy single-line `address` so existing profiles still
+        // populate something rather than skipping the field.
+        "street1" => fallback(&profile.street1, &profile.address),
+        "street2" => primary(&profile.street2),
+        "city" => fallback(&profile.city, &profile.address),
+        "state" => fallback(&profile.state, &profile.address),
+        "postal_code" => fallback(&profile.postal_code, &profile.address),
+        "country" => primary(&profile.country),
+        "address" => primary(&profile.address),
+        "linkedin" => primary(&profile.linkedin),
+        "github" => primary(&profile.github),
+        "website" => primary(&profile.website),
+        "work_authorization" => primary(&profile.work_authorization),
         _ => return None,
     };
     if v.is_empty() {
@@ -878,12 +926,31 @@ mod tests {
     }
     #[test]
     fn predict_address_variants() {
-        assert_eq!(predict_field_key(&fd("Street address", "", "", "", "", "text")), "address");
-        // City and street still route to "address" until Tier 2 splits
-        // them. Zip routes to postal_code (Tier 1 — most-specific subfield).
-        assert_eq!(predict_field_key(&fd("City", "", "", "", "", "text")), "address");
+        assert_eq!(predict_field_key(&fd("Street address", "", "", "", "", "text")), "street1");
+        assert_eq!(predict_field_key(&fd("Street", "", "", "", "", "text")), "street1");
+        assert_eq!(predict_field_key(&fd("Address Line 1", "", "", "", "", "text")), "street1");
+        assert_eq!(predict_field_key(&fd("Address Line 2", "", "", "", "", "text")), "street2");
+        assert_eq!(predict_field_key(&fd("Apartment / Suite", "", "", "", "", "text")), "street2");
+        assert_eq!(predict_field_key(&fd("City", "", "", "", "", "text")), "city");
+        assert_eq!(predict_field_key(&fd("State", "", "", "", "", "text")), "state");
+        assert_eq!(predict_field_key(&fd("Province", "", "", "", "", "text")), "state");
+        assert_eq!(predict_field_key(&fd("Country", "", "", "", "", "text")), "country");
         assert_eq!(predict_field_key(&fd("Zip code", "", "", "", "", "text")), "postal_code");
         assert_eq!(predict_field_key(&fd("Postal code", "", "", "", "", "text")), "postal_code");
+        // Bare "Address" with no qualifier → legacy single-line slot.
+        // Forms that mean "street1" usually say so.
+        assert_eq!(predict_field_key(&fd("Address", "", "", "", "", "text")), "address");
+    }
+
+    #[test]
+    fn predict_address_does_not_match_address_inside_unrelated_words() {
+        // Regression-style: a field id="addressbar" or label
+        // "Email address line" must NOT classify as a street1.
+        // (Email wins via has("email") earlier in the chain.)
+        assert_eq!(
+            predict_field_key(&fd("Email address", "", "", "user_email", "", "email")),
+            "email"
+        );
     }
     #[test]
     fn predict_work_authorization_variants() {
