@@ -59,15 +59,19 @@ pub mod cdp;
 pub mod config;
 pub mod connector;
 pub mod fingerprint;
+pub mod github;
 pub mod input;
 pub mod internal;
 pub mod learning;
 pub mod paths;
 pub mod products;
 pub mod resume;
+pub mod run_loop;
 pub mod shell;
 pub mod strategy;
 pub mod text;
+#[cfg(feature = "tui")]
+pub mod tui;
 pub mod window;
 
 /// Result of running one test. The TRIPLE SIMS gate hashes a
@@ -207,15 +211,19 @@ pub fn run_all() -> Vec<TestResult> {
     all.extend(config::run());
     all.extend(connector::run());
     all.extend(fingerprint::run());
+    all.extend(github::run());
     all.extend(input::run());
     all.extend(internal::run());
     all.extend(learning::run());
     all.extend(paths::run());
     all.extend(products::run());
     all.extend(resume::run());
+    all.extend(run_loop::run());
     all.extend(shell::run());
     all.extend(strategy::run());
     all.extend(text::run());
+    #[cfg(feature = "tui")]
+    all.extend(tui::run());
     all.extend(window::run());
     all
 }
