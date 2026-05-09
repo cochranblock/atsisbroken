@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: Unlicense
 
-//! Anti-fingerprint controls. Because we own the engine, every
-//! signal an ATS vendor uses to identify automation is a config
-//! knob: User-Agent, navigator.webdriver, canvas hash, font list,
-//! plugins enumeration, screen dimensions, timezone, WebGL vendor.
+//! Anti-fingerprint controls. Because we own the engine, the
+//! signals an ATS vendor uses to identify automation can become
+//! config knobs: User-Agent, navigator.webdriver, canvas hash,
+//! font list, plugins enumeration, screen dimensions, timezone,
+//! WebGL vendor. This module defines the schema + per-domain
+//! override matcher; the values aren't enforced against a live
+//! page yet (the JS engine that exposes them — mozjs — lands in
+//! a later phase). The configuration shape is stable and the
+//! TOML round-trips, so once the engine arrives the wiring is
+//! a connection, not a redesign.
 //!
 //! The browser ships with three preset profiles and accepts a
 //! `~/.atsisbroken/fingerprints.toml` for power users who want
@@ -203,14 +209,20 @@ mod tests {
 
     #[test]
     fn webdriver_default_false_for_every_preset() {
-        // Hard contract: we never advertise navigator.webdriver=true.
-        // Chromium-via-CDP can't avoid this; we can.
+        // Pins the struct default across every preset. This is a
+        // configuration-shape contract, not a runtime one — the JS
+        // engine that would actually expose the value to a page
+        // (mozjs) hasn't landed yet. The pin still has value: it's
+        // what the JS layer will read when it arrives, and is also
+        // the answer the headed CDP fallback uses while it's the
+        // active engine path. Chromium-via-CDP fights its own
+        // webdriver=true default; we don't have that constraint.
         for p in [
             FingerprintProfile::balanced(),
             FingerprintProfile::paranoid(),
             FingerprintProfile::natural(),
         ] {
-            assert!(!p.navigator_webdriver, "preset advertises automation");
+            assert!(!p.navigator_webdriver, "preset default flipped");
         }
     }
 

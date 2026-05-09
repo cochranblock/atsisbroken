@@ -240,9 +240,15 @@ mod tests {
     }
 
     #[test]
-    fn default_config_balanced_fingerprint() {
+    fn default_config_pins_webdriver_field_false() {
+        // This pins the struct default — the FingerprintProfile
+        // we hand the rest of the system says webdriver=false.
+        // It is NOT a runtime guarantee against a live page; the
+        // JS engine that would enforce it (mozjs) hasn't landed.
+        // The pin still has value: when the JS layer arrives, this
+        // is the value it will read, and any drift in the default
+        // surfaces here.
         let c = BrowserConfig::default();
-        // Hard contract: default never advertises automation.
         assert!(!c.fingerprint.navigator_webdriver);
     }
 }

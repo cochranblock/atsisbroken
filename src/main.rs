@@ -151,10 +151,11 @@ enum Cmd {
     },
     /// Pull public-repo metadata, README excerpts, and recent
     /// commit messages from GitHub into
-    /// `~/.atsisbroken/github_inventory.json`. Used by Phase K's
-    /// answer composer for verbatim-source free-form answers
-    /// ("describe a project," "biggest technical challenge,"
-    /// etc.).
+    /// `~/.atsisbroken/github_inventory.json`. Phase K's answer
+    /// composer (not yet implemented) will draw on this inventory
+    /// to assemble free-form answers ("describe a project,"
+    /// "biggest technical challenge," etc.), citing each emitted
+    /// fragment back to a public URL.
     SyncGithub {
         /// GitHub login. Falls back to the handle stored in
         /// `~/.atsisbroken/github_inventory.json` from a prior

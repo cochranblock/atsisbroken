@@ -1,8 +1,12 @@
 # Unlicense — public domain — cochranblock.org
 # atsisbroken — the browser for filling job applications. Single Rust binary,
-# Servo-derived engine, no Chrome dependency, no extension. The browser IS
-# the product. Per-character human-like input, per-domain anti-fingerprint
-# controls, audit-passable verbatim-source free-form composition.
+# Servo-derived engine (in flight), no Chrome dependency, no extension. The
+# browser IS the product. Design intent: per-character human-like input,
+# per-domain anti-fingerprint controls, and verbatim-source composition for
+# freetext fields that anchors every emitted token to a public URL the user
+# already wrote. Composer + JS engine + the audit-trail wiring land in
+# subsequent phases; today's binary ships the schema, the page router, the
+# wgpu+glyphon render pipeline, and the network plumbing for connectors.
 # Stack: html5ever + stylo + WebRender + SpiderMonkey (via Servo) for the
 # engine; winit + wgpu for window + render surface; reqwest + rustls for
 # network; the existing classifier + Profile + GitHub source + correction

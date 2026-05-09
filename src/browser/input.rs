@@ -7,8 +7,17 @@
 //! property.
 //!
 //! No `rand` dep — we use a small splitmix64 PRNG seeded once per
-//! session. Deterministic for tests; sufficiently random in
-//! production for the timing distribution we need.
+//! session. Deterministic given a seed (tests pin one). The threat
+//! model is: keep the inter-keystroke timing distribution from
+//! looking obviously machine-generated to a vendor's casual
+//! anti-bot heuristic that bins event deltas. splitmix64 covers
+//! that — its output is statistically uniform and fools per-event
+//! distribution checks. It is NOT cryptographically secure: a
+//! vendor that captures enough timing samples and runs an adversarial
+//! analysis can recover the seed and predict subsequent delays. If
+//! that becomes the relevant threat, swap in `rand::rngs::OsRng`
+//! or a CSPRNG; the rest of the timing code is distribution-shape
+//! agnostic.
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;

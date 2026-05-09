@@ -5,15 +5,21 @@
 //!
 //! Glyphon wraps cosmic-text (Unicode-correct shaping with font
 //! fallback) and renders glyphs via a wgpu texture atlas. This
-//! module is the bridge between "engine produced parsed HTML and
-//! resolved layout" and "user sees pixels."
+//! module is the bridge between "the shell has strings to draw"
+//! and "user sees pixels." The producer side is intentionally
+//! dumb today — three string slots at fixed positions — and
+//! gets upgraded as the engine grows.
 //!
-//! Today's surface is intentionally thin. The browser shell hands
-//! us three blocks of text (URL bar, page title, page body) at
-//! fixed positions; we render them onto the wgpu pass. When stylo
-//! and the layout engine land, the layout engine produces a list
-//! of `(x, y, text, style)` tuples and this module renders that
-//! same list. The interface stays stable; the producer changes.
+//! Today's surface: the shell hands us three blocks of text (URL
+//! bar, page title, page body) at fixed positions; we render them
+//! onto the wgpu pass. There is no HTML parsing or layout solving
+//! yet — html5ever is wired for parsing but the document tree
+//! does not feed this module. When stylo and the layout engine
+//! land, the layout engine will produce a list of
+//! `(x, y, text, style)` tuples and this module will render that
+//! same list. The Vec<TextRun> interface stays stable; the
+//! producer changes from "shell hardcodes three runs" to "layout
+//! engine emits a frame's worth of runs."
 
 #![cfg(feature = "gui")]
 

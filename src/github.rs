@@ -5,9 +5,12 @@
 //! GitHub inventory — Phase I.
 //!
 //! Per-user snapshot of public-repo metadata, README excerpts, and
-//! recent commit messages, used by Phase K's answer composer as a
-//! verbatim source for free-form ATS prompts ("describe a project,"
-//! "biggest technical challenge," etc.).
+//! recent commit messages. Phase K's answer composer will consume
+//! this as one of its source streams for free-form ATS prompts
+//! ("describe a project," "biggest technical challenge," etc.) —
+//! the composer itself hasn't landed yet. This module's job is
+//! to fetch and persist the data with enough fidelity that the
+//! composer can quote from it later.
 //!
 //! ## What we deliberately do NOT store
 //! - Source code (only file structure + line counts via FileSummary)
@@ -92,11 +95,13 @@ pub struct GithubInventory {
     pub starred_count: u32,
 }
 
-/// Per-repo metadata. The composer (Phase K) cites
-/// (owner, name, commit_sha, readme_section) for every
-/// answer it produces from this struct; every emitted token must
-/// trace verbatim to one of `readme_excerpts`, `recent_commit_messages`,
-/// or a structural fact (name / primary_language / stars).
+/// Per-repo metadata. Design intent for the composer (Phase K,
+/// not yet implemented): each emitted freetext token traces back
+/// to a `(owner, name, commit_sha, readme_section)` citation in
+/// one of `readme_excerpts`, `recent_commit_messages`, or a
+/// structural fact (name / primary_language / stars). This struct
+/// is the data side of that contract; the composer that actually
+/// enforces "every token has a citation" lands later.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct RepoSnapshot {
     pub owner: String,

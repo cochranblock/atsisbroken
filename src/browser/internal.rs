@@ -61,9 +61,12 @@ fn home() -> InternalPage {
         body: "\
 The browser for filling job applications.
 
-Connect what you've made. We'll write your applications from it —
-verbatim from your own GitHub, blog, Stack Overflow, and the rest.
-Nothing leaves this device unless you say so.
+Connect what you've made. The plan: write your applications from
+it, anchoring every freetext sentence to a public URL you already
+wrote — GitHub, blog, Stack Overflow, the rest. Nothing leaves this
+device unless you say so. The composer that does the anchoring
+ships in a later phase; today's binary covers the connectors and
+the local schema.
 
 Where to start
 
@@ -333,12 +336,12 @@ fn fingerprint() -> InternalPage {
         body: "\
 Default profile: Paranoid
 
-    User-Agent              Firefox/128 on Linux x86_64 (spoof)
-    navigator.webdriver     false (always — hard contract)
-    Canvas hash             randomized per session (slight noise)
-    WebGL vendor            randomized per session
-    Font enumeration        blocked (returns common-fonts subset)
-    Hardware concurrency    reports 8 (you may have more)
+    User-Agent              Firefox/128 on Linux x86_64 (planned)
+    navigator.webdriver     false (planned default)
+    Canvas hash             per-session noise (planned)
+    WebGL vendor            per-session randomization (planned)
+    Font enumeration        common-fonts subset (planned)
+    Hardware concurrency    reports 8 (planned)
     Timezone                host (we don't lie about location)
     Languages               host
     Screen size             host
@@ -348,6 +351,12 @@ Per-domain overrides
     *.icims.com             Balanced
     *.greenhouse.io         Balanced
     Add overrides via ~/.atsisbroken/fingerprints.toml
+
+Status: the FingerprintProfile struct + per-domain override matcher
+are implemented and tested. The browser doesn't have a JS engine
+yet, so the values aren't enforced against a real page — that
+ships when mozjs lands. Until then this page documents intent and
+the configuration shape, not a live guarantee.
 
 Note: Canvas/WebGL noise breaks image CAPTCHAs on some vendors.
 If a CAPTCHA wall trips, switch that domain to Balanced.\
@@ -409,9 +418,11 @@ fn audit_bar() -> InternalPage {
         body: "\
 Single-purpose view: 'I am proving I'm filling this honestly.'
 
-Keep this page open during an interview to demonstrate the audit
-story live. As applications get filled, the audit bar updates with
-the verbatim source of every emitted token.\
+Design intent: keep this page open during an interview to show
+the audit story live — as applications get filled, the audit bar
+will list every emitted freetext token alongside the public URL
+the composer pulled it from. The composer + token-to-URL ledger
+land in a later phase; today this page documents the shape.\
 "
         .to_string(),
     }
@@ -589,9 +600,12 @@ mod tests {
     }
 
     #[test]
-    fn fingerprint_pins_webdriver_false() {
-        // The webdriver=false hard contract should be visible to
-        // the user on the fingerprint page so they can verify it.
+    fn fingerprint_page_documents_webdriver_default() {
+        // The fingerprint page should advertise the webdriver=false
+        // default so the user can see the planned contract; whether
+        // it's actually enforced against a real page depends on the
+        // (not-yet-landed) JS engine. This test pins the page text,
+        // not the runtime guarantee.
         let page = render(&Url::internal("fingerprint"));
         assert!(page.body.contains("navigator.webdriver"));
         assert!(page.body.contains("false"));

@@ -7,9 +7,12 @@ Title: atsisbroken
 
 The browser for filling job applications.
 
-Connect what you've made. We'll write your applications from it —
-verbatim from your own GitHub, blog, Stack Overflow, and the rest.
-Nothing leaves this device unless you say so.
+Connect what you've made. The plan: write your applications from
+it, anchoring every freetext sentence to a public URL you already
+wrote — GitHub, blog, Stack Overflow, the rest. Nothing leaves this
+device unless you say so. The composer that does the anchoring
+ships in a later phase; today's binary covers the connectors and
+the local schema.
 
 Where to start
 

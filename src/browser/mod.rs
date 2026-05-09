@@ -5,10 +5,14 @@
 //! atsisbroken — the browser shell.
 //!
 //! This is the product. Single Rust binary, Servo-derived engine
-//! eventually, no Chrome dependency, no extension. The user opens
-//! atsisbroken, navigates to a job posting, and watches the form
-//! get filled with per-character human-like timing and verbatim-
-//! source attribution for every freetext slot.
+//! (in flight), no Chrome dependency, no extension. Design intent:
+//! the user opens atsisbroken, navigates to a job posting, and
+//! watches the form get filled with per-character human-like
+//! timing, while every freetext token is anchored to a public URL
+//! the user already wrote. The per-character input layer, the
+//! composer, and the audit-trail wiring land in subsequent phases;
+//! today's binary ships the schema, the page router, the wgpu +
+//! glyphon render pipeline, and the network plumbing for connectors.
 //!
 //! ## Architecture
 //!

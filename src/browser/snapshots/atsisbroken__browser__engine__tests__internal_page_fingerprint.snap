@@ -7,12 +7,12 @@ Title: Anti-fingerprint
 
 Default profile: Paranoid
 
-    User-Agent              Firefox/128 on Linux x86_64 (spoof)
-    navigator.webdriver     false (always — hard contract)
-    Canvas hash             randomized per session (slight noise)
-    WebGL vendor            randomized per session
-    Font enumeration        blocked (returns common-fonts subset)
-    Hardware concurrency    reports 8 (you may have more)
+    User-Agent              Firefox/128 on Linux x86_64 (planned)
+    navigator.webdriver     false (planned default)
+    Canvas hash             per-session noise (planned)
+    WebGL vendor            per-session randomization (planned)
+    Font enumeration        common-fonts subset (planned)
+    Hardware concurrency    reports 8 (planned)
     Timezone                host (we don't lie about location)
     Languages               host
     Screen size             host
@@ -22,6 +22,12 @@ Per-domain overrides
     *.icims.com             Balanced
     *.greenhouse.io         Balanced
     Add overrides via ~/.atsisbroken/fingerprints.toml
+
+Status: the FingerprintProfile struct + per-domain override matcher
+are implemented and tested. The browser doesn't have a JS engine
+yet, so the values aren't enforced against a real page — that
+ships when mozjs lands. Until then this page documents intent and
+the configuration shape, not a live guarantee.
 
 Note: Canvas/WebGL noise breaks image CAPTCHAs on some vendors.
 If a CAPTCHA wall trips, switch that domain to Balanced.

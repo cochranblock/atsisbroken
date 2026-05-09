@@ -2,13 +2,18 @@
 // Unlicense — public domain — cochranblock.org
 
 //! ProductGraph — the indexed corpus of everything the user has
-//! made, pulled from connectors, queried by the composer.
+//! made, pulled from connectors. Eventually queried by the
+//! composer; the composer hasn't landed yet, so today the graph
+//! is written by connectors and read only by tests + future
+//! consumers.
 //!
 //! This is the central data structure of the application. Every
-//! Product has a stable id, a public URL (so citations are
-//! verifiable), a verbatim Excerpt set with byte offsets, and
-//! source metadata. The composer reads this; nothing else writes
-//! to it except connectors and the user's manual edits.
+//! Product has a stable id, a public URL (so citations stay
+//! verifiable), an Excerpt set with byte offsets back into the
+//! stored text, and source metadata. The byte-offset invariant
+//! is what lets a future composer cite each emitted fragment
+//! back to its source range without re-fetching. Connectors and
+//! manual user edits are the only writers.
 //!
 //! On-disk: `~/.atsisbroken/product_graph.json` — atomic write,
 //! same pattern as the GitHubInventory and FeedbackQueue.
