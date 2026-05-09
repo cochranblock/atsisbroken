@@ -73,6 +73,12 @@ pub struct NavigateOutcome {
 pub struct PageSnapshot {
     pub url: String,
     pub title: String,
+    /// Body text the renderer paints below the title. For network
+    /// pages this is a description (e.g. "Loaded X — N fields
+    /// detected"); for internal `atsisbroken://` pages it's the
+    /// full page content from [`super::internal::render`]. The
+    /// shell hands this to the text layer verbatim.
+    pub body: String,
     pub fields: Vec<FieldDescriptor>,
 }
 
@@ -90,9 +96,10 @@ pub enum EngineError {
 
 /// Static-HTML engine. Parses HTML via html5ever, walks the DOM
 /// to extract form fields, treats every page as inert (no JS, no
-/// CSS-driven layout). Sufficient for static pages; insufficient
-/// for ATS forms (Workday + Greenhouse + Lever are all SPAs that
-/// render nothing without JS).
+/// CSS-driven layout). Sufficient for static pages and for the
+/// internal `atsisbroken://` pages we generate ourselves;
+/// insufficient for ATS forms (Workday + Greenhouse + Lever are
+/// all SPAs that render nothing without JS).
 ///
 /// This is the v0 of the engine layer. The point isn't to ship
 /// it as production; the point is to have the shape in place
@@ -101,13 +108,19 @@ pub enum EngineError {
 /// real engine is being integrated.
 pub struct StaticHtmlEngine {
     /// Cached DOM from the most-recent navigation. None before
-    /// first `navigate`.
+    /// first `navigate`, and None for internal pages (which don't
+    /// produce a DOM — they produce title + body directly).
     dom: Option<RcDom>,
     /// URL of the last navigation. Used as the title fallback
     /// and for `snapshot_fields().url`.
     last_url: Option<Url>,
     /// Cached title text from the last navigation.
     title: String,
+    /// Cached body text. For network pages this is a description
+    /// the shell composes (e.g. "Loaded URL — N fields"). For
+    /// internal pages this is the rendered page content from
+    /// [`super::internal::render`].
+    body: String,
     /// HTTP client. We share the existing reqwest client style
     /// (rustls-tls) so the dep graph doesn't grow.
     client: reqwest::blocking::Client,
@@ -124,6 +137,7 @@ impl StaticHtmlEngine {
             dom: None,
             last_url: None,
             title: String::new(),
+            body: String::new(),
             client,
         })
     }
@@ -147,10 +161,22 @@ impl StaticHtmlEngine {
 
 impl Engine for StaticHtmlEngine {
     fn navigate(&mut self, url: &Url) -> Result<NavigateOutcome, EngineError> {
+        // Internal `atsisbroken://` URLs go through the in-process
+        // page renderer — no network, no HTML parser, no DOM. The
+        // engine just stores the rendered title + body for the
+        // shell to paint.
         if url.is_internal() {
-            return Err(EngineError::Unimplemented(
-                "atsisbroken:// internal pages — Phase shell",
-            ));
+            let page = super::internal::render(url);
+            self.title = page.title;
+            self.body = page.body;
+            self.dom = None;
+            self.last_url = Some(url.clone());
+            return Ok(NavigateOutcome {
+                final_url: url.clone(),
+                status: 0,
+                content_type: "text/atsisbroken-internal".to_string(),
+                form_field_count: 0,
+            });
         }
         if !url.is_network() {
             return Err(EngineError::Network(format!(
@@ -178,6 +204,16 @@ impl Engine for StaticHtmlEngine {
         self.title = Self::extract_title(&dom);
         let fields = Self::extract_fields(&dom);
         let form_field_count = fields.len();
+        // For network pages, body is a one-line description the
+        // shell can use as a fallback. The shell typically
+        // overrides this with its own composed message.
+        self.body = if form_field_count > 0 {
+            format!(
+                "Loaded {url}.\n\n{form_field_count} form field(s) detected."
+            )
+        } else {
+            format!("Loaded {url}.")
+        };
         self.dom = Some(dom);
         self.last_url = Some(url.clone());
         Ok(NavigateOutcome {
@@ -189,18 +225,26 @@ impl Engine for StaticHtmlEngine {
     }
 
     fn snapshot_fields(&self) -> Result<PageSnapshot, EngineError> {
-        let dom = self
-            .dom
+        // Internal pages: no DOM, just the rendered title+body.
+        // Network pages: extract fields from the cached DOM.
+        let url_str = self
+            .last_url
             .as_ref()
-            .ok_or(EngineError::Parse("no page loaded".into()))?;
+            .map(|u| u.to_string())
+            .unwrap_or_default();
+        let fields = if let Some(dom) = self.dom.as_ref() {
+            Self::extract_fields(dom)
+        } else if self.last_url.is_some() {
+            // Internal page — no fields by definition.
+            Vec::new()
+        } else {
+            return Err(EngineError::Parse("no page loaded".into()));
+        };
         Ok(PageSnapshot {
-            url: self
-                .last_url
-                .as_ref()
-                .map(|u| u.to_string())
-                .unwrap_or_default(),
+            url: url_str,
             title: self.title.clone(),
-            fields: Self::extract_fields(dom),
+            body: self.body.clone(),
+            fields,
         })
     }
 
@@ -372,13 +416,27 @@ mod tests {
     }
 
     #[test]
-    fn navigate_to_internal_url_unimplemented() {
+    fn navigate_to_internal_url_renders_in_process() {
         let mut e = StaticHtmlEngine::new().unwrap();
-        let url: Url = "atsisbroken://settings".parse().unwrap();
-        match e.navigate(&url) {
-            Err(EngineError::Unimplemented(_)) => {}
-            other => panic!("expected Unimplemented, got {other:?}"),
-        }
+        let url: Url = "atsisbroken://home".parse().unwrap();
+        let outcome = e.navigate(&url).expect("internal navigate must succeed");
+        assert_eq!(outcome.status, 0);
+        assert_eq!(outcome.content_type, "text/atsisbroken-internal");
+        assert_eq!(outcome.form_field_count, 0);
+        let snap = e.snapshot_fields().unwrap();
+        assert_eq!(snap.title, "atsisbroken");
+        assert!(!snap.body.is_empty());
+        assert!(snap.fields.is_empty());
+    }
+
+    #[test]
+    fn navigate_internal_unknown_returns_not_found_page() {
+        let mut e = StaticHtmlEngine::new().unwrap();
+        let url: Url = "atsisbroken://does-not-exist".parse().unwrap();
+        e.navigate(&url).expect("not-found page is still a valid render");
+        let snap = e.snapshot_fields().unwrap();
+        assert_eq!(snap.title, "Page not found");
+        assert!(snap.body.contains("atsisbroken://does-not-exist"));
     }
 
     #[test]

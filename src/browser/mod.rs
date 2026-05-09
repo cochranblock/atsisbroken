@@ -49,6 +49,7 @@ mod connector;
 mod engine;
 mod fingerprint;
 mod input;
+mod internal;
 mod products;
 mod shell;
 mod text;
