@@ -58,10 +58,17 @@ pub enum BrowserError {
 }
 
 /// Run the browser. Blocks until the user closes the window.
+///
+/// Engine construction failure surfaces here, before the event
+/// loop runs. Previously a failed `StaticHtmlEngine::new()` was
+/// silently swallowed via a `NullEngine` fallback (Rust audit bug
+/// #5); the user got an inert window with no diagnostic. Now the
+/// `?` propagates `EngineError` through `BrowserError` so the
+/// caller sees what's wrong.
 pub fn run(config: BrowserConfig) -> Result<(), BrowserError> {
     let event_loop = EventLoop::new()
         .map_err(|e| BrowserError::EventLoop(format!("create: {e}")))?;
-    let mut app = App::new(config);
+    let mut app = App::new(config)?;
     event_loop
         .run_app(&mut app)
         .map_err(|e| BrowserError::EventLoop(format!("run: {e}")))?;
@@ -77,31 +84,25 @@ struct App {
     config: BrowserConfig,
     state: Option<WindowState>,
     engine: Box<dyn Engine>,
+    #[allow(dead_code)] // wired in when input layer lands
     timing: InputTiming,
-    /// Captured at startup if window/engine init fails. The
-    /// event-loop API is fire-and-forget; we need a side-channel
-    /// to surface startup failure to the caller of `run()`.
+    /// Captured if window init fails inside `resumed`. winit's
+    /// ApplicationHandler is fire-and-forget; we need a side-
+    /// channel to surface mid-event-loop errors to `run()`.
     startup_error: Option<BrowserError>,
 }
 
 impl App {
-    fn new(config: BrowserConfig) -> Self {
+    fn new(config: BrowserConfig) -> Result<Self, BrowserError> {
         let timing = InputTiming::new(config.input.clone());
-        // Default engine is the static-HTML one. When stylo +
-        // mozjs are integrated, this becomes a feature-gated
-        // selection. The shell doesn't care which Engine impl
-        // it talks to as long as the trait holds.
-        let engine: Box<dyn Engine> = match StaticHtmlEngine::new() {
-            Ok(e) => Box::new(e),
-            Err(_) => Box::new(NullEngine),
-        };
-        Self {
+        let engine: Box<dyn Engine> = Box::new(StaticHtmlEngine::new()?);
+        Ok(Self {
             config,
             state: None,
             engine,
             timing,
             startup_error: None,
-        }
+        })
     }
 }
 
@@ -175,35 +176,13 @@ impl ApplicationHandler for App {
     }
 }
 
-/// Inert engine used when the real engine fails to construct.
-/// The shell stays usable (window opens, can be closed); the
-/// page just stays empty. Surfaces the failure via stderr but
-/// doesn't crash the binary.
-struct NullEngine;
-
-impl Engine for NullEngine {
-    fn navigate(&mut self, _url: &Url) -> Result<super::engine::NavigateOutcome, EngineError> {
-        Err(EngineError::Unimplemented("null engine"))
-    }
-    fn snapshot_fields(&self) -> Result<super::engine::PageSnapshot, EngineError> {
-        Err(EngineError::Unimplemented("null engine"))
-    }
-    fn fill_field(
-        &mut self,
-        _field_id: &str,
-        _value: &str,
-        _timing: &mut InputTiming,
-    ) -> Result<(), EngineError> {
-        Err(EngineError::Unimplemented("null engine"))
-    }
-    fn read_field(&self, _field_id: &str) -> Result<Option<String>, EngineError> {
-        Err(EngineError::Unimplemented("null engine"))
-    }
-    fn screenshot(&self) -> Result<Vec<u8>, EngineError> {
-        Err(EngineError::Unimplemented("null engine"))
-    }
-}
-
+// NullEngine retired. It existed solely to swallow
+// `StaticHtmlEngine::new()` failure so the window could still
+// open with an inert engine. Per Rust audit bug #5: that's silent
+// failure. Now the constructor failure surfaces through
+// `App::new` → `run` → caller, with the actual EngineError text
+// preserved via thiserror's `#[from]`.
+//
 // Suppress unused warning for the Arc import on builds where
 // no platform window backend is active.
 #[allow(dead_code)]
