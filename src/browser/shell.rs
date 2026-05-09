@@ -198,8 +198,15 @@ impl ApplicationHandler for App {
                 state.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                if let Err(e) = state.render() {
-                    eprintln!("render: {e}");
+                // Dedup via state.render_log so a stuck
+                // SurfaceError (`Outdated` mid-resize, `Lost` on
+                // a GPU disconnect) doesn't spam stderr every
+                // vsync. WindowState's RenderLog handles the
+                // text-layer sites; this slot covers the outer
+                // surface present.
+                match state.render() {
+                    Ok(()) => state.render_log.frame_ok(),
+                    Err(e) => state.render_log.frame_err(e),
                 }
             }
             _ => {}

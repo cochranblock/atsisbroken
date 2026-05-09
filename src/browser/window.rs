@@ -35,6 +35,64 @@ pub struct WindowState {
     pub url_text: String,
     pub title_text: String,
     pub body_text: String,
+    /// Per-render-site dedup for eprintln. Without it, a glyphon
+    /// atlas-OOM or a wgpu Surface::Outdated mid-resize would
+    /// emit one stderr line per frame (60/sec, unbuffered) — bad
+    /// for the user's terminal and a real source of frame jank.
+    /// Each slot stores the last message we emitted; we only
+    /// re-emit when the message text changes.
+    pub render_log: RenderLog,
+}
+
+/// Three-slot dedup for the render-hot-path eprintln calls.
+/// Categories: text-layer prepare, text-layer render, frame
+/// present. One transition (Ok → Err) emits one line; identical
+/// errors on subsequent frames are suppressed; recovery (Err →
+/// Ok) clears the slot so the next failure is logged again.
+#[derive(Default)]
+pub struct RenderLog {
+    last_prepare: Option<String>,
+    last_render: Option<String>,
+    last_frame: Option<String>,
+}
+
+impl RenderLog {
+    /// Emit `msg` to stderr unless it matches the last message
+    /// stored in `slot` (string-equal). Caller passes one of the
+    /// three slot accessors so each site has its own dedup state.
+    fn log_dedup(slot: &mut Option<String>, msg: String) {
+        if slot.as_deref() == Some(msg.as_str()) {
+            return;
+        }
+        eprintln!("{msg}");
+        *slot = Some(msg);
+    }
+
+    /// Clear a slot. Called on the success path so the next
+    /// failure (after recovery) is logged again rather than
+    /// suppressed because it matches a stale message.
+    fn clear(slot: &mut Option<String>) {
+        *slot = None;
+    }
+
+    pub fn prepare_err(&mut self, e: impl std::fmt::Display) {
+        Self::log_dedup(&mut self.last_prepare, format!("text prepare: {e}"));
+    }
+    pub fn prepare_ok(&mut self) {
+        Self::clear(&mut self.last_prepare);
+    }
+    pub fn render_err(&mut self, e: impl std::fmt::Display) {
+        Self::log_dedup(&mut self.last_render, format!("text render: {e}"));
+    }
+    pub fn render_ok(&mut self) {
+        Self::clear(&mut self.last_render);
+    }
+    pub fn frame_err(&mut self, e: impl std::fmt::Display) {
+        Self::log_dedup(&mut self.last_frame, format!("render: {e}"));
+    }
+    pub fn frame_ok(&mut self) {
+        Self::clear(&mut self.last_frame);
+    }
 }
 
 impl WindowState {
@@ -128,6 +186,7 @@ impl WindowState {
             url_text: String::new(),
             title_text: "atsisbroken".to_string(),
             body_text: "Loading…".to_string(),
+            render_log: RenderLog::default(),
         })
     }
 
@@ -179,9 +238,12 @@ impl WindowState {
         // glyphon prepare must happen BEFORE the render pass
         // begins (it uses the device + queue to upload glyphs to
         // its atlas). Errors here bubble up — typically only fail
-        // on out-of-memory in the atlas.
-        if let Err(e) = self.text.prepare(&self.device, &self.queue, &runs) {
-            eprintln!("text prepare: {e}");
+        // on out-of-memory in the atlas. Logging is deduped via
+        // RenderLog so a stuck-error condition doesn't flood
+        // stderr at frame rate.
+        match self.text.prepare(&self.device, &self.queue, &runs) {
+            Ok(()) => self.render_log.prepare_ok(),
+            Err(e) => self.render_log.prepare_err(e),
         }
 
         let mut encoder =
@@ -206,12 +268,86 @@ impl WindowState {
             });
             // Render the text into the same pass as the clear so
             // the glyphs land directly on the cleared background.
-            if let Err(e) = self.text.render(&mut rpass) {
-                eprintln!("text render: {e}");
+            // Same dedup pattern as the prepare call above.
+            match self.text.render(&mut rpass) {
+                Ok(()) => self.render_log.render_ok(),
+                Err(e) => self.render_log.render_err(e),
             }
         }
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RenderLog;
+
+    /// Pin the dedup-by-string contract on RenderLog. Three slots
+    /// (prepare, render, frame); identical messages on the same
+    /// slot collapse to a single emission; a different message
+    /// re-emits; an `_ok` call on the slot resets so subsequent
+    /// failures (after a recovery) emit again.
+    ///
+    /// We can't observe stderr from inside the test cleanly
+    /// without capturing it, so we only assert the cached state
+    /// transitions. Stderr emission tracks the cached transitions
+    /// 1:1 by construction.
+    #[test]
+    fn render_log_dedups_identical_messages() {
+        let mut log = RenderLog::default();
+        log.prepare_err("atlas oom");
+        assert_eq!(log_prepare(&log), Some("text prepare: atlas oom"));
+
+        // Same error again — slot is unchanged.
+        log.prepare_err("atlas oom");
+        assert_eq!(log_prepare(&log), Some("text prepare: atlas oom"));
+    }
+
+    #[test]
+    fn render_log_re_emits_when_message_changes() {
+        let mut log = RenderLog::default();
+        log.prepare_err("atlas oom");
+        log.prepare_err("device lost");
+        assert_eq!(log_prepare(&log), Some("text prepare: device lost"));
+    }
+
+    #[test]
+    fn render_log_clears_on_ok_so_next_err_emits_again() {
+        let mut log = RenderLog::default();
+        log.prepare_err("atlas oom");
+        log.prepare_ok();
+        assert_eq!(log_prepare(&log), None);
+        // After recovery + new failure, slot updates again rather
+        // than being suppressed by the stale "atlas oom" cache.
+        log.prepare_err("atlas oom");
+        assert_eq!(log_prepare(&log), Some("text prepare: atlas oom"));
+    }
+
+    #[test]
+    fn render_log_slots_are_independent() {
+        // prepare / render / frame each have their own slot; an
+        // entry in one doesn't dedup against the others.
+        let mut log = RenderLog::default();
+        log.prepare_err("a");
+        log.render_err("a");
+        log.frame_err("a");
+        assert_eq!(log_prepare(&log), Some("text prepare: a"));
+        assert_eq!(log_render(&log), Some("text render: a"));
+        assert_eq!(log_frame(&log), Some("render: a"));
+    }
+
+    // Test-only accessors. RenderLog's slot fields are private;
+    // these helpers reach into them via a side-door cfg(test) impl
+    // below.
+    fn log_prepare(l: &RenderLog) -> Option<&str> {
+        l.last_prepare.as_deref()
+    }
+    fn log_render(l: &RenderLog) -> Option<&str> {
+        l.last_render.as_deref()
+    }
+    fn log_frame(l: &RenderLog) -> Option<&str> {
+        l.last_frame.as_deref()
     }
 }
