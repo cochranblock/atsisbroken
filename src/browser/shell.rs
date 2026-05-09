@@ -172,7 +172,11 @@ impl App {
 /// + snapshot result pair. Pulled out of the `resumed` closure so
 /// the worker thread can call it from off-thread without
 /// duplicating the formatting logic.
-fn compose_page_text(
+///
+/// `pub(crate)` so the tests tree (`src/tests/shell.rs`) can pin
+/// the title-fallback and error-rendering shape directly. Not part
+/// of the external API.
+pub(crate) fn compose_page_text(
     url: &Url,
     nav: Result<(), EngineError>,
     snap: Result<super::engine::PageSnapshot, EngineError>,
@@ -368,114 +372,4 @@ impl ApplicationHandler<NavMsg> for App {
 #[allow(dead_code)]
 fn _arc_window_marker() -> Option<Arc<()>> {
     None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_config_starts_on_network_landing_page() {
-        // The default home is the live landing page. Network
-        // navigation goes through the audit-fix-#11 worker
-        // thread, so the OS event loop never blocks on the
-        // initial fetch.
-        let c = BrowserConfig::default();
-        assert!(c.start_url.is_network());
-        assert_eq!(c.start_url.host(), "atsisbroken.cochranblock.org");
-    }
-
-    #[test]
-    fn default_config_title_includes_crate_version() {
-        let c = BrowserConfig::default();
-        assert!(c.title.contains("atsisbroken"));
-        assert!(c.title.contains(env!("CARGO_PKG_VERSION")));
-    }
-
-    #[test]
-    fn default_config_pins_webdriver_field_false() {
-        // This pins the struct default — the FingerprintProfile
-        // we hand the rest of the system says webdriver=false.
-        // It is NOT a runtime guarantee against a live page; the
-        // JS engine that would enforce it (mozjs) hasn't landed.
-        // The pin still has value: when the JS layer arrives, this
-        // is the value it will read, and any drift in the default
-        // surfaces here.
-        let c = BrowserConfig::default();
-        assert!(!c.fingerprint.navigator_webdriver);
-    }
-
-    // ─── compose_page_text ───────────────────────────────────────────────
-
-    use super::compose_page_text;
-    use super::super::engine::PageSnapshot;
-
-    fn url_for_test(s: &str) -> Url {
-        s.parse().expect("test URL must parse")
-    }
-
-    #[test]
-    fn compose_page_text_uses_snapshot_title_when_present() {
-        let url = url_for_test("https://example.com/");
-        let snap = PageSnapshot {
-            url: url.to_string(),
-            title: "Example Domain".into(),
-            body: "This domain is for use in illustrative examples.".into(),
-            fields: Vec::new(),
-        };
-        let (title, body) = compose_page_text(&url, Ok(()), Ok(snap));
-        assert_eq!(title, "Example Domain");
-        assert!(body.contains("illustrative"));
-    }
-
-    #[test]
-    fn compose_page_text_falls_back_to_host_when_title_empty() {
-        // Network pages without a <title> tag use the URL host as
-        // the title — matches the address-bar idiom of "you're at
-        // example.com" when the page hasn't named itself.
-        let url = url_for_test("https://example.com/");
-        let snap = PageSnapshot {
-            url: url.to_string(),
-            title: String::new(),
-            body: "body text".into(),
-            fields: Vec::new(),
-        };
-        let (title, body) = compose_page_text(&url, Ok(()), Ok(snap));
-        assert_eq!(title, "example.com");
-        assert_eq!(body, "body text");
-    }
-
-    #[test]
-    fn compose_page_text_renders_navigate_error_into_body() {
-        // Failed navigation renders the error inline so the user
-        // sees it in the window — not just on stderr.
-        let url = url_for_test("https://example.com/");
-        let nav_err = Err(EngineError::Network("dns: no route to host".into()));
-        let snap_err = Err(EngineError::Parse("no page loaded".into()));
-        let (title, body) = compose_page_text(&url, nav_err, snap_err);
-        assert_eq!(title, "atsisbroken");
-        assert!(body.contains("Couldn't load"));
-        assert!(body.contains("https://example.com/"));
-        assert!(body.contains("dns: no route to host"));
-    }
-
-    // ─── Url routing dispatch ────────────────────────────────────────────
-
-    #[test]
-    fn internal_url_takes_synchronous_path() {
-        // The dispatch in `resumed` keys off `is_internal()`. Pin
-        // the predicate so a URL refactor doesn't silently route
-        // an internal page through the network worker (which
-        // would still work, but would be wasteful + confusing).
-        let url = url_for_test("atsisbroken://home");
-        assert!(url.is_internal());
-        assert!(!url.is_network());
-    }
-
-    #[test]
-    fn network_url_takes_async_worker_path() {
-        let url = url_for_test("https://boards.greenhouse.io/example/jobs/123");
-        assert!(!url.is_internal());
-        assert!(url.is_network());
-    }
 }

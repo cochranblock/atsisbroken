@@ -61,7 +61,7 @@ default = ["tui", "gui"]
 # Same exopack standalone crate the rest of the Cochran Block
 # portfolio uses — github.com/cochranblock/exopack with feature
 # `triple_sims`.
-tests = ["dep:exopack", "dep:blake3"]
+tests = ["gui", "dep:exopack", "dep:blake3"]
 # Optional terminal UI. ratatui + crossterm (~250 KB compiled). Drop with
 # `--no-default-features` for the leanest cross-compiled releases.
 tui = ["dep:ratatui", "dep:crossterm"]

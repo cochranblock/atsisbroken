@@ -56,12 +56,12 @@ mod engine;
 // pub(crate) just makes the module *path* visible inside the crate.
 pub(crate) mod fingerprint;
 pub(crate) mod input;
-mod internal;
+pub(crate) mod internal;
 pub(crate) mod products;
-mod shell;
-mod text;
+pub(crate) mod shell;
+pub(crate) mod text;
 mod url;
-mod window;
+pub(crate) mod window;
 
 pub use connector::{AuthShape, ConnectorKind};
 pub use engine::{Engine, EngineError, NavigateOutcome, PageSnapshot, StaticHtmlEngine};

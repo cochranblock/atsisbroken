@@ -56,7 +56,11 @@ use std::time::Instant;
 pub mod connector;
 pub mod fingerprint;
 pub mod input;
+pub mod internal;
 pub mod products;
+pub mod shell;
+pub mod text;
+pub mod window;
 
 /// Result of running one test. The TRIPLE SIMS gate hashes a
 /// deterministic projection of `Vec<TestResult>` (name + passed +
@@ -192,7 +196,11 @@ pub fn run_all() -> Vec<TestResult> {
     all.extend(connector::run());
     all.extend(fingerprint::run());
     all.extend(input::run());
+    all.extend(internal::run());
     all.extend(products::run());
+    all.extend(shell::run());
+    all.extend(text::run());
+    all.extend(window::run());
     all
 }
 
