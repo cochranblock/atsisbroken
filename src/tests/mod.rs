@@ -53,12 +53,15 @@
 
 use std::time::Instant;
 
+pub mod bridge;
+pub mod browser_detect;
 pub mod cdp;
 pub mod config;
 pub mod connector;
 pub mod fingerprint;
 pub mod input;
 pub mod internal;
+pub mod learning;
 pub mod paths;
 pub mod products;
 pub mod shell;
@@ -196,12 +199,15 @@ pub fn case(name: &str, body: impl FnOnce() -> Result<(), String>) -> TestResult
 /// with it (print, hash, exit).
 pub fn run_all() -> Vec<TestResult> {
     let mut all = Vec::new();
+    all.extend(bridge::run());
+    all.extend(browser_detect::run());
     all.extend(cdp::run());
     all.extend(config::run());
     all.extend(connector::run());
     all.extend(fingerprint::run());
     all.extend(input::run());
     all.extend(internal::run());
+    all.extend(learning::run());
     all.extend(paths::run());
     all.extend(products::run());
     all.extend(shell::run());
