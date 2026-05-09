@@ -34,17 +34,12 @@ pub mod github;
 pub mod learning;
 pub mod run_loop;
 
-/// Re-export of kova's ats_fixtures exopack capability. (The `kova-engine`
-/// package exposes its lib as `kova`, hence the import name.) Used by
-/// `tests/ats_e2e.rs` and (future) the TUI's "diagnose against fixtures"
-/// surface. Sources documented in `docs/ATS_FIXTURE_SOURCES.md`.
-///
-/// Gated on `legacy_cdp_e2e` because the in-tree `ats_fixtures` module
-/// only exists on the kova workspace that has it bundled. Older kova
-/// shapes (with exopack as an external git dep) don't have this module
-/// and atsisbroken builds without the e2e fixture path.
-#[cfg(feature = "legacy_cdp_e2e")]
-pub use kova::exopack::ats_fixtures;
+// The kova ats_fixtures re-export and the legacy CDP e2e test were
+// retired when atsisbroken pivoted to "the browser is the product"
+// (Phase A series). The browser shell renders pages directly through
+// its own engine; chromiumoxide-driven fixture testing belongs to the
+// previous architecture. Vendor coverage is now demonstrated by the
+// browser navigating to real ATS postings, not by HTML fixtures.
 pub mod paths;
 pub mod resume;
 pub mod strategy;

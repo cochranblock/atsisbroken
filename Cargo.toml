@@ -67,13 +67,6 @@ gui = [
     "dep:markup5ever_rcdom",
     "dep:glyphon",
 ]
-# Legacy CDP path against kova's in-tree ats_fixtures module. Required for
-# the existing ats_e2e.rs integration test that drives real Chromium against
-# the 5 vendor fixtures. Off when building against an older kova-engine
-# (e.g. the Mac Mini side with the external-exopack version) — the browser
-# feature has none of this dependency. Default is on so the dev box gate
-# stays unchanged.
-legacy_cdp_e2e = ["kova-engine/ats_fixtures"]
 
 [dependencies]
 # The Cochran Block, LLC crates (paths; swap to crates.io or git when published).
