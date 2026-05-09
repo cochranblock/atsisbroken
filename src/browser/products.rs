@@ -215,7 +215,7 @@ impl Default for Authorship {
 }
 
 /// Full graph of the user's products + connection state.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProductGraph {
     /// Schema version anchor. Bumped when the wire format changes
     /// in a way that needs explicit migration. Today: 1.
@@ -228,8 +228,26 @@ pub struct ProductGraph {
     pub last_synced: BTreeMap<String, String>,
 }
 
+/// Manual `Default` impl. Don't use `derive(Default)` here:
+/// `u32::default()` gives 0, but `#[serde(default = ...)]` on the
+/// version field produces 1 for missing-version JSON. Mismatch
+/// means `default → save → load → default` is non-identity:
+/// the round-trip would mutate 0 → 1 silently. (Rust audit bug #3.)
+/// Manual impl pins both paths to the same canonical value.
+impl Default for ProductGraph {
+    fn default() -> Self {
+        Self {
+            version: default_version(),
+            products: Vec::new(),
+            last_synced: BTreeMap::new(),
+        }
+    }
+}
+
+const CURRENT_SCHEMA_VERSION: u32 = 1;
+
 fn default_version() -> u32 {
-    1
+    CURRENT_SCHEMA_VERSION
 }
 
 impl ProductGraph {
@@ -312,20 +330,50 @@ mod tests {
     }
 
     #[test]
-    fn empty_graph_is_default() {
+    fn empty_graph_default_pins_current_schema_version() {
+        // Manual Default impl makes ProductGraph::default() return
+        // version = CURRENT_SCHEMA_VERSION (1), matching what
+        // serde-default produces for old-shape JSON missing the
+        // version field. The save → load round-trip is the identity
+        // function on a default graph; it didn't used to be.
         let g = ProductGraph::default();
-        assert_eq!(g.version, 0); // default::default for u32 is 0
-        // The version field defaults to 1 only when deserialized from JSON
-        // missing the field. Manual default is 0 — we rely on serde for
-        // version bump on load, not on Default::default. Verify both:
+        assert_eq!(g.version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(g.version, 1);
+
+        // Save → load preserves version exactly.
         let json = serde_json::to_string(&g).unwrap();
         let back: ProductGraph = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.version, 0);
+        assert_eq!(back, g);
+        assert_eq!(back.version, 1);
 
-        // Loading old-shape JSON without the version field bumps to 1.
+        // v0-shaped JSON (no version field) still loads as v1 via
+        // the serde-default fallback. Forward-compat for any pre-
+        // versioned graph that was already on disk.
         let v0_json = r#"{"products":[],"last_synced":{}}"#;
         let v0_loaded: ProductGraph = serde_json::from_str(v0_json).unwrap();
         assert_eq!(v0_loaded.version, 1);
+        assert_eq!(v0_loaded, g);
+    }
+
+    #[test]
+    fn default_save_load_is_identity() {
+        // Pin the symmetry: default → save → load → default.
+        // This test would have failed before the manual impl —
+        // version: 0 (default) → save writes "version":0 → load
+        // reads version=0 (no fallback fires) → result has version=0.
+        // After the fix, the chain is 1 → 1 → 1.
+        let g = ProductGraph::default();
+        let dir = std::env::temp_dir().join(format!(
+            "atsisbroken_pg_identity_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("identity.json");
+        g.save_to(&path).unwrap();
+        let loaded = ProductGraph::load_from(&path).unwrap();
+        assert_eq!(loaded, g, "save→load should be identity on default");
+        assert_eq!(loaded.version, 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
