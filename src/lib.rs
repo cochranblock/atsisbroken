@@ -56,6 +56,17 @@ pub mod strategy;
 #[cfg(feature = "tui")]
 pub mod tui;
 
+// In-binary tests — the cochranblock exopack pattern. Gated by
+// `#[cfg(feature = "tests")]` so production builds (no `tests`
+// feature) don't compile the test surface; the `atsisbroken-test`
+// binary is the only consumer (it requires the feature, see
+// Cargo.toml). cargo test runs un-migrated `#[cfg(test)] mod
+// tests {}` blocks in their original locations; once a module's
+// tests live in `src/tests/`, the original block has been
+// deleted and this module owns its coverage.
+#[cfg(feature = "tests")]
+pub mod tests;
+
 /// Seed corpus of generic ATS field → key pairs. Compiled into the binary.
 /// Bootstrap signal for users who have not yet built up their own labelled
 /// data. Augmented at `init` time with pairs derived from the user's resume.

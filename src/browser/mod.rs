@@ -60,6 +60,7 @@ mod text;
 mod url;
 mod window;
 
+pub use connector::{AuthShape, ConnectorKind};
 pub use engine::{Engine, EngineError, NavigateOutcome, PageSnapshot, StaticHtmlEngine};
 pub use fingerprint::FingerprintProfile;
 pub use input::{HumanInputProfile, KeyTimingDistribution};
