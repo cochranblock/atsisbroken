@@ -168,7 +168,7 @@ enum Cmd {
     /// this subcommand is the equivalent of double-clicking the
     /// app icon. Future: become the default behavior of running
     /// `atsisbroken` with no subcommand, retiring the TUI.
-    #[cfg(feature = "browser")]
+    #[cfg(feature = "gui")]
     Browse {
         /// URL to open on launch. Defaults to atsisbroken://home.
         #[arg(long)]
@@ -208,7 +208,7 @@ async fn main() -> Result<()> {
         Some(Cmd::Feedback) => cmd_feedback().await,
         Some(Cmd::ConnectGithub { handle, token }) => cmd_connect_github(handle, token).await,
         Some(Cmd::SyncGithub { handle }) => cmd_sync_github(handle).await,
-        #[cfg(feature = "browser")]
+        #[cfg(feature = "gui")]
         Some(Cmd::Browse { url }) => cmd_browse(url),
         Some(Cmd::Status) => cmd_status(profile_override).await,
         Some(Cmd::Tui) => cmd_tui().await,
@@ -216,7 +216,7 @@ async fn main() -> Result<()> {
     }
 }
 
-#[cfg(feature = "browser")]
+#[cfg(feature = "gui")]
 fn cmd_browse(url: Option<String>) -> Result<()> {
     use atsisbroken::browser::{launch, BrowserConfig, Url};
     let mut config = BrowserConfig::default();

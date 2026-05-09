@@ -13,6 +13,7 @@
 
 [workspace]
 members = ["android"]
+resolver = "2"
 
 [package]
 name = "atsisbroken"
@@ -44,15 +45,19 @@ name = "atsisbroken"
 path = "src/main.rs"
 
 [features]
-default = ["tui", "browser"]
+default = ["tui", "gui"]
 # Optional terminal UI. ratatui + crossterm (~250 KB compiled). Drop with
 # `--no-default-features` for the leanest cross-compiled releases.
 tui = ["dep:ratatui", "dep:crossterm"]
-# The browser shell. Window via winit, render surface via wgpu, HTML/CSS/JS
-# engine wired in below. This is the product surface; everything else is
-# either "brain" (classifier / Profile / sources) or legacy automation
-# fallbacks (CDP / extension).
-browser = [
+# The browser shell. Named `gui` (not `browser`) because kova-engine has
+# its own `browser` feature for a different purpose; Cargo's
+# command-line `--features` matching is workspace-wide and a name
+# collision means `--features browser` would also enable kova's
+# core-graphics + image deps which don't compile on Linux. `gui` is
+# atsisbroken-specific and avoids the collision. Window via winit,
+# render surface via wgpu, HTML/CSS/JS engine wired in below. This is
+# the product surface.
+gui = [
     "dep:winit",
     "dep:wgpu",
     "dep:raw-window-handle",
@@ -62,12 +67,19 @@ browser = [
     "dep:markup5ever_rcdom",
     "dep:glyphon",
 ]
+# Legacy CDP path against kova's in-tree ats_fixtures module. Required for
+# the existing ats_e2e.rs integration test that drives real Chromium against
+# the 5 vendor fixtures. Off when building against an older kova-engine
+# (e.g. the Mac Mini side with the external-exopack version) — the browser
+# feature has none of this dependency. Default is on so the dev box gate
+# stays unchanged.
+legacy_cdp_e2e = ["kova-engine/ats_fixtures"]
 
 [dependencies]
 # The Cochran Block, LLC crates (paths; swap to crates.io or git when published).
 # kova-engine: inference loader + tokenization. We do NOT use its bundled
 # model story — atsisbroken's models are user-trained, not author-shipped.
-kova-engine    = { path = "../kova", default-features = false, features = ["inference", "ats_fixtures"] }
+kova-engine    = { path = "../kova", default-features = false, features = ["inference"] }
 # Chromium DevTools Protocol client. Pure Rust. No JS toolchain, no extension store.
 chromiumoxide  = { version = "0.7", default-features = false, features = ["tokio-runtime"] }
 # Async runtime for the CDP client + trainer + inference loop.
@@ -92,6 +104,7 @@ base64         = "0.22"
 # TUI deps — versions pinned to match kova's TUI feature for workspace parity.
 ratatui        = { version = "0.29", optional = true }
 crossterm      = { version = "0.28", optional = true }
+
 # Browser shell deps. The window + render surface stack is winit + wgpu;
 # this is the same stack Servo's WebRender uses internally and what every
 # Rust-native UI framework (egui, iced, dioxus-blitz) standardizes on.
@@ -99,7 +112,7 @@ crossterm      = { version = "0.28", optional = true }
 # Servo-style DOM representation — same crates Servo uses, so when we
 # wire in stylo + spidermonkey-via-mozjs the DOM hand-off is direct.
 winit              = { version = "0.30", optional = true }
-wgpu               = { version = "23", optional = true, default-features = false, features = ["wgsl", "metal", "dx12"] }
+wgpu               = { version = "23", optional = true, default-features = false, features = ["wgsl"] }
 raw-window-handle  = { version = "0.6", optional = true }
 pollster           = { version = "0.4", optional = true }
 bytemuck           = { version = "1", optional = true, features = ["derive"] }

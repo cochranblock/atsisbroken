@@ -15,7 +15,7 @@
 //! of `(x, y, text, style)` tuples and this module renders that
 //! same list. The interface stays stable; the producer changes.
 
-#![cfg(feature = "browser")]
+#![cfg(feature = "gui")]
 
 use glyphon::{
     Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping,

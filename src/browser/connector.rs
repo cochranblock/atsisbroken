@@ -9,7 +9,7 @@
 //! impls land in `connectors/` (one file per source). This file
 //! only carries the enum + trait + connection state.
 
-#![cfg(feature = "browser")]
+#![cfg(feature = "gui")]
 
 use serde::{Deserialize, Serialize};
 

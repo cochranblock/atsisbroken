@@ -13,7 +13,7 @@
 //! On-disk: `~/.atsisbroken/product_graph.json` — atomic write,
 //! same pattern as the GitHubInventory and FeedbackQueue.
 
-#![cfg(feature = "browser")]
+#![cfg(feature = "gui")]
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

@@ -25,7 +25,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod bridge;
-#[cfg(feature = "browser")]
+#[cfg(feature = "gui")]
 pub mod browser;
 pub mod browser_detect;
 pub mod cdp;
@@ -38,6 +38,12 @@ pub mod run_loop;
 /// package exposes its lib as `kova`, hence the import name.) Used by
 /// `tests/ats_e2e.rs` and (future) the TUI's "diagnose against fixtures"
 /// surface. Sources documented in `docs/ATS_FIXTURE_SOURCES.md`.
+///
+/// Gated on `legacy_cdp_e2e` because the in-tree `ats_fixtures` module
+/// only exists on the kova workspace that has it bundled. Older kova
+/// shapes (with exopack as an external git dep) don't have this module
+/// and atsisbroken builds without the e2e fixture path.
+#[cfg(feature = "legacy_cdp_e2e")]
 pub use kova::exopack::ats_fixtures;
 pub mod paths;
 pub mod resume;

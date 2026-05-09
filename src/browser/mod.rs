@@ -43,7 +43,7 @@
 //! returns decisions. The browser turns those decisions into
 //! per-character keystrokes dispatched through the engine.
 
-#![cfg(feature = "browser")]
+#![cfg(feature = "gui")]
 
 mod connector;
 mod engine;

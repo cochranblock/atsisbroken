@@ -11,6 +11,13 @@
 //! When chromium isn't installed, the BrowserFetcher would download
 //! ~150 MB. CI without internet skips that path; the test marks itself
 //! as skipped rather than failing.
+//!
+//! Gated on `legacy_cdp_e2e` — the in-tree kova `ats_fixtures` module
+//! is only available when the workspace's kova-engine has it bundled.
+//! When building against an older kova shape (or the new Servo-backed
+//! engine path), this entire test file becomes a no-op.
+
+#![cfg(feature = "legacy_cdp_e2e")]
 
 use atsisbroken::{predict_field_key, profile_value_for_key, FieldDescriptor, Profile};
 use chromiumoxide::page::ScreenshotParams;
