@@ -265,4 +265,94 @@ mod tests {
         assert!(matches_glob("a*c", "axyzc"));
         assert!(!matches_glob("a*c", "abd"));
     }
+
+    /// Edge cases the Rust audit raised concerns about. Pinning
+    /// the actual behavior so future refactors don't regress
+    /// these specific surfaces. The audit (#4) claimed
+    /// `matches_glob("", anything)` returned true; tracing the
+    /// code shows the fast path `!pattern.contains('*')` catches
+    /// empty pattern first and returns `"" == target` — false for
+    /// any non-empty target. The bug doesn't exist as described.
+    /// But the broader concern — sparse coverage of glob edge
+    /// cases — is valid, so the test ships anyway.
+    #[test]
+    fn glob_edge_cases() {
+        let cases: &[(&str, &str, bool)] = &[
+            // Empty pattern only matches empty target.
+            ("", "anything", false),
+            ("", "", true),
+            // Single star matches everything including empty.
+            ("*", "anything", true),
+            ("*", "", true),
+            // Multiple stars are equivalent to one.
+            ("**", "anything", true),
+            ("***", "anything", true),
+            // Wrap-with-stars: matches when the literal appears
+            // anywhere.
+            ("*foo*", "abfooxy", true),
+            ("*foo*", "foo", true),
+            ("*foo*", "ab", false),
+            // Leading + trailing literal must align.
+            ("foo*", "foobar", true),
+            ("foo*", "xfoobar", false),
+            ("*foo", "barfoo", true),
+            ("*foo", "barfooz", false),
+            // Repeated literal — the audit flagged this as a
+            // potential corner. Empirically: works correctly.
+            ("a*a", "ab", false),
+            ("a*a", "aba", true),
+            ("a*a", "a", false),
+            // Multi-segment pattern.
+            ("a*b*c", "abc", true),
+            ("a*b*c", "axbyc", true),
+            ("a*b*c", "axb", false),
+            // Hostname patterns (the actual production use case).
+            ("*.workday.com", "acme.workday.com", true),
+            ("*.workday.com", "workday.com", false),
+            ("*.workday.com", "myworkday.com", false),
+            ("*.icims.com", "subdomain.icims.com", true),
+        ];
+        for (p, t, want) in cases {
+            let got = matches_glob(p, t);
+            assert_eq!(
+                got, *want,
+                "matches_glob({p:?}, {t:?}) = {got}, want {want}"
+            );
+        }
+    }
+
+    /// Hostname-pattern usage is the actual production surface
+    /// for matches_glob. Pin the by-host resolver behavior with
+    /// realistic patterns the user might write in
+    /// fingerprints.toml.
+    #[test]
+    fn host_override_realistic_patterns() {
+        let overrides = FingerprintOverrides {
+            by_host: vec![
+                HostOverride {
+                    pattern: "*.workday.com".into(),
+                    profile: FingerprintProfile::paranoid(),
+                },
+                HostOverride {
+                    pattern: "*.icims.com".into(),
+                    profile: FingerprintProfile::balanced(),
+                },
+                HostOverride {
+                    pattern: "boards.greenhouse.io".into(),
+                    profile: FingerprintProfile::balanced(),
+                },
+            ],
+        };
+        // Workday tenants → paranoid.
+        assert!(overrides.resolve("acme.workday.com").is_some());
+        assert!(overrides.resolve("acme.workday.com").unwrap().canvas_noise);
+        // iCIMS tenants → balanced (no canvas noise).
+        assert!(overrides.resolve("careers.icims.com").is_some());
+        assert!(!overrides.resolve("careers.icims.com").unwrap().canvas_noise);
+        // Exact-host pattern (no wildcards) requires exact match.
+        assert!(overrides.resolve("boards.greenhouse.io").is_some());
+        assert!(overrides.resolve("boards-staging.greenhouse.io").is_none());
+        // Unknown host → None (falls through to global default).
+        assert!(overrides.resolve("jobs.example.com").is_none());
+    }
 }
