@@ -232,9 +232,13 @@ pub struct ProductGraph {
     pub version: u32,
     /// All products from all connectors, deduplicated by ProductId.
     pub products: Vec<Product>,
-    /// Per-connector last-sync timestamp (RFC3339).
+    /// Per-connector last-sync timestamp (RFC3339). Keyed by
+    /// [`ConnectorKind`] so the wire-format key matches the canonical
+    /// name pinned by audit-fix-#1's `#[serde(rename = "...")]`
+    /// (e.g. `"github"`, not the Debug-format `"GitHub"`). serde_json
+    /// uses the unit-variant's serialized form as the JSON object key.
     #[serde(default)]
-    pub last_synced: BTreeMap<String, String>,
+    pub last_synced: BTreeMap<ConnectorKind, String>,
 }
 
 /// Manual `Default` impl. Don't use `derive(Default)` here:
@@ -299,13 +303,16 @@ impl ProductGraph {
         self.products.iter().filter(move |p| p.source == kind)
     }
 
-    /// Mark a connector as synced now. RFC3339 timestamp.
+    /// Mark a connector as synced now. RFC3339 timestamp. The key
+    /// stored on disk is the connector's canonical wire name
+    /// (`"github"` etc.), not the Rust Debug format — see the
+    /// field doc on `last_synced`.
     pub fn record_sync(&mut self, kind: ConnectorKind, when: impl Into<String>) {
-        self.last_synced.insert(format!("{kind:?}"), when.into());
+        self.last_synced.insert(kind, when.into());
     }
 
     pub fn last_sync(&self, kind: ConnectorKind) -> Option<&str> {
-        self.last_synced.get(&format!("{kind:?}")).map(|s| s.as_str())
+        self.last_synced.get(&kind).map(|s| s.as_str())
     }
 }
 
@@ -421,6 +428,40 @@ mod tests {
         g.record_sync(ConnectorKind::GitHub, "2026-05-09T13:00:00Z");
         assert_eq!(g.last_sync(ConnectorKind::GitHub), Some("2026-05-09T13:00:00Z"));
         assert_eq!(g.last_sync(ConnectorKind::StackOverflow), None);
+    }
+
+    #[test]
+    fn last_synced_serializes_with_canonical_wire_keys() {
+        // The on-disk key is the connector's canonical wire name
+        // (audit-fix-#1: `#[serde(rename = "github")]`), NOT the
+        // Rust Debug format (`"GitHub"`). Before this fix the keys
+        // were Debug-format and drifted from every other use of
+        // ConnectorKind in the JSON.
+        let mut g = ProductGraph::default();
+        g.record_sync(ConnectorKind::GitHub, "2026-05-09T13:00:00Z");
+        g.record_sync(ConnectorKind::StackOverflow, "2026-05-09T14:00:00Z");
+        g.record_sync(ConnectorKind::NpmRegistry, "2026-05-09T15:00:00Z");
+        let json = serde_json::to_string(&g).unwrap();
+        // Canonical names appear on the wire.
+        assert!(json.contains("\"github\":"), "expected canonical 'github' key, got: {json}");
+        assert!(json.contains("\"stackoverflow\":"), "expected 'stackoverflow' key");
+        assert!(json.contains("\"npm\":"), "expected 'npm' key (NpmRegistry's rename)");
+        // Debug-format names do NOT appear on the wire.
+        assert!(!json.contains("\"GitHub\":"), "old Debug-format key leaked");
+        assert!(!json.contains("\"NpmRegistry\":"), "Debug-format key leaked");
+    }
+
+    #[test]
+    fn last_synced_round_trips_through_json() {
+        // Save → load preserves every entry, keyed by ConnectorKind.
+        let mut g = ProductGraph::default();
+        g.record_sync(ConnectorKind::GitHub, "2026-05-09T13:00:00Z");
+        g.record_sync(ConnectorKind::USPTO, "2026-05-09T14:00:00Z");
+        let json = serde_json::to_string(&g).unwrap();
+        let back: ProductGraph = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.last_sync(ConnectorKind::GitHub), Some("2026-05-09T13:00:00Z"));
+        assert_eq!(back.last_sync(ConnectorKind::USPTO), Some("2026-05-09T14:00:00Z"));
+        assert_eq!(back, g);
     }
 
     #[test]
