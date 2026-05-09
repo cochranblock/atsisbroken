@@ -4,9 +4,19 @@
 
 //! # atsisbroken
 //!
-//! Browser autopilot that fills job applications using a model the user
-//! trains locally from their own resume + per-field feedback. Drives
-//! Chromium via CDP (chromiumoxide). Single Rust binary. Cross-compiled.
+//! The browser for filling job applications. Single Rust binary,
+//! Servo-derived engine (in flight) — no Chrome dependency, no
+//! extension. Cross-compiled. The user's model is built locally
+//! from their own resume + per-field feedback.
+//!
+//! Architecturally, this crate is the brain: the Profile schema,
+//! the field classifier, the run loop, the connectors, the
+//! correction overlay. The browser shell + render pipeline live
+//! under [`browser`] and call into the brain on every navigation
+//! and field encounter. The legacy CDP path (chromiumoxide,
+//! [`cdp`]) is still wired for the `run --strategy cdp-attach`
+//! flow but retires once the in-tree engine renders real ATS
+//! pages.
 //!
 //! No open-source models. No cloud. No accounts. No premium tier.
 //! No baked third-party weights. The user's model is the only model.
@@ -147,12 +157,15 @@ pub struct Profile {
     /// fields without the user's explicit value here.
     #[serde(default)]
     pub compensation: Option<Compensation>,
-    /// Voluntary EEO / AAP demographics. None by default — the run
-    /// loop has a hard contract that demographics fields are skipped
-    /// in every mode unless the user has explicitly set this AND
-    /// opted in per-fill via a dedicated flag (not implemented yet).
-    /// Even setting `Some(Demographics::default())` does NOT enable
-    /// autofill on its own.
+    /// Voluntary EEO / AAP demographics. None by default. Today's
+    /// run loop has no demographics-fill path at all — fields are
+    /// skipped by absence, not by an enforced gate. The contract
+    /// when a fill path lands: setting `Some(Demographics{..})` is
+    /// necessary but not sufficient; a per-run opt-in (not
+    /// implemented yet) is also required. Even
+    /// `Some(Demographics::default())` does NOT enable autofill on
+    /// its own. Documented here so the gate is the first thing
+    /// designed when the demographics path is wired.
     #[serde(default)]
     pub demographics: Option<Demographics>,
     /// Structured work authorization (citizenship country, status,
@@ -182,9 +195,12 @@ pub struct Profile {
     #[serde(default)]
     pub applications: Vec<Application>,
     /// User-authored free-form answer slots. The answer composer
-    /// (Phase K) fills these via verbatim source synthesis (GitHub
-    /// + Blog inventories) when the user has opted in; the user
-    /// can also write them by hand. Either way, output is verbatim.
+    /// (Phase K, not yet shipped) is intended to fill these by
+    /// quoting public material the user has already published —
+    /// GitHub READMEs, blog posts, etc. — so each emitted
+    /// fragment can be cited back to a public URL. Until the
+    /// composer lands, the only writers are user edits; the
+    /// citation invariant is design intent, not enforced today.
     #[serde(default)]
     pub free_form: FreeFormAnswers,
     pub raw_resume_text: String,
@@ -379,10 +395,13 @@ pub struct Certification {
     pub credential_url: String,
 }
 
-/// Cross-link target. When a `Project` corresponds to a GitHub repo,
-/// `Project.github_repo` carries this so the answer composer (Phase K)
-/// can pull verbatim README excerpts and commit messages from the
-/// GitHub inventory entry with the same (owner, name).
+/// Cross-link target. When a `Project` corresponds to a GitHub
+/// repo, `Project.github_repo` carries this so the answer composer
+/// (Phase K, not yet shipped) can fetch the matching inventory
+/// entry's README excerpts (paragraph-joined; see
+/// [`crate::github::extract_excerpts`] for the join behavior) and
+/// commit messages (byte-for-byte from the GitHub API) by
+/// (owner, name).
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct RepoRef {
     pub owner: String,
@@ -437,10 +456,11 @@ pub struct Compensation {
     pub desired_equity: String,
 }
 
-/// Voluntary self-identification fields. Off by default; the run loop
-/// has a hard contract that demographics fields are skipped in every
-/// mode unless the user has both populated this struct AND passed the
-/// per-run flag (not implemented yet — explicit gesture required).
+/// Voluntary self-identification fields. Off by default. Today's
+/// run loop has no demographics-fill path; the planned gate, when
+/// it lands, requires both this struct populated AND a per-run
+/// opt-in (not implemented yet). The two-key gesture is the
+/// design — keep it the design when the path is wired.
 ///
 /// All fields are free-form strings so users can write what they
 /// actually identify as without being forced into our enum vocabulary.
@@ -643,9 +663,11 @@ pub struct Application {
 /// authored value or composes from GitHub / Blog inventories.
 ///
 /// Each slot is `Option<String>`. None = "user has not authored a
-/// response"; the composer is allowed to synthesize from inventories.
-/// `Some("")` = "user explicitly cleared this slot — never autofill,
-/// even from a verbatim source." Two distinct signals.
+/// response"; the (eventual) composer is allowed to synthesize
+/// from inventories. `Some("")` = "user explicitly cleared this
+/// slot — never autofill, even from a public-source citation."
+/// Two distinct signals; the composer reads them separately when
+/// it ships.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct FreeFormAnswers {
     #[serde(default)]
@@ -2561,9 +2583,10 @@ mod tests {
         // None: "user has not authored a response — composer may
         // synthesize from inventories."
         // Some(""): "user explicitly cleared this slot — never
-        // autofill, even from a verbatim source."
-        // Phase K reads these differently. Pin the type-level
-        // distinction so it can't drift.
+        // autofill, even from a public-source citation."
+        // Phase K (when shipped) reads these differently. Pin
+        // the type-level distinction so it can't drift before
+        // the composer arrives to consume it.
         let none_signal = FreeFormAnswers::default();
         let cleared = FreeFormAnswers {
             elevator_pitch: Some(String::new()),
