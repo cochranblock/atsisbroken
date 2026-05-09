@@ -51,10 +51,13 @@
 
 mod connector;
 mod engine;
-mod fingerprint;
-mod input;
+// pub(crate) for the modules the tests tree (src/tests/) reaches
+// into directly. External callers still use the re-exports below;
+// pub(crate) just makes the module *path* visible inside the crate.
+pub(crate) mod fingerprint;
+pub(crate) mod input;
 mod internal;
-mod products;
+pub(crate) mod products;
 mod shell;
 mod text;
 mod url;
