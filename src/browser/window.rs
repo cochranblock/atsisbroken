@@ -16,6 +16,8 @@ use winit::dpi::LogicalSize;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes};
 
+use super::text::{page_runs, TextLayer, TextRun};
+
 /// Per-window state the shell maintains.
 pub struct WindowState {
     pub window: Arc<Window>,
@@ -25,6 +27,12 @@ pub struct WindowState {
     pub config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     pub clear_color: wgpu::Color,
+    pub text: TextLayer,
+    /// Current page text for rendering. Updated by the shell
+    /// after navigation; rendered every frame.
+    pub url_text: String,
+    pub title_text: String,
+    pub body_text: String,
 }
 
 impl WindowState {
@@ -85,6 +93,9 @@ impl WindowState {
         };
         surface.configure(&device, &config);
 
+        let mut text = TextLayer::new(&device, &queue, surface_format);
+        text.resize(&queue, size.width.max(1), size.height.max(1));
+
         Ok(Self {
             window,
             surface,
@@ -101,6 +112,10 @@ impl WindowState {
                 b: 0.10,
                 a: 1.0,
             },
+            text,
+            url_text: String::new(),
+            title_text: "atsisbroken".to_string(),
+            body_text: "Loading…".to_string(),
         })
     }
 
@@ -110,25 +125,61 @@ impl WindowState {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+            self.text.resize(&self.queue, new_size.width, new_size.height);
         }
     }
 
-    /// Render one frame. Today's paint is a clear-only frame; the
-    /// engine's `paint(&mut surface)` will replace this when
-    /// stylo + WebRender are wired.
+    /// Update the page text the next frame will render. Called by
+    /// the shell after navigation completes.
+    pub fn set_page(
+        &mut self,
+        url: impl Into<String>,
+        title: impl Into<String>,
+        body: impl Into<String>,
+    ) {
+        self.url_text = url.into();
+        self.title_text = title.into();
+        self.body_text = body.into();
+        self.window.request_redraw();
+    }
+
+    /// Render one frame. Clear pass + text overlay. When stylo +
+    /// WebRender are wired, the clear pass becomes the first of
+    /// many; layout-driven paint commands stack on top.
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let frame = self.surface.get_current_texture()?;
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Build the per-frame text run list. When the shell asks
+        // for an internal page like atsisbroken://connections, the
+        // body is whatever HTML-parsed text the engine produced.
+        // For now, body is set explicitly via set_page.
+        let runs: Vec<TextRun> = page_runs(
+            &self.url_text,
+            &self.title_text,
+            &self.body_text,
+            self.config.width,
+            self.config.height,
+        );
+
+        // glyphon prepare must happen BEFORE the render pass
+        // begins (it uses the device + queue to upload glyphs to
+        // its atlas). Errors here bubble up — typically only fail
+        // on out-of-memory in the atlas.
+        if let Err(e) = self.text.prepare(&self.device, &self.queue, &runs) {
+            eprintln!("text prepare: {e}");
+        }
+
         let mut encoder =
             self.device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("atsisbroken-encoder"),
                 });
         {
-            let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("clear-pass"),
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("clear-and-text-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
@@ -141,6 +192,11 @@ impl WindowState {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+            // Render the text into the same pass as the clear so
+            // the glyphs land directly on the cleared background.
+            if let Err(e) = self.text.render(&mut rpass) {
+                eprintln!("text render: {e}");
+            }
         }
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();

@@ -113,13 +113,36 @@ impl ApplicationHandler for App {
             return;
         }
         match WindowState::new(event_loop, &self.config.title) {
-            Ok(state) => {
-                self.state = Some(state);
+            Ok(mut state) => {
                 // Eager navigate: take the configured start URL
                 // immediately so the first paint shows something.
-                if let Err(e) = self.engine.navigate(&self.config.start_url) {
-                    eprintln!("startup navigate: {e}");
-                }
+                let url_str = self.config.start_url.to_string();
+                let (title, body) = match self.engine.navigate(&self.config.start_url) {
+                    Ok(_) => match self.engine.snapshot_fields() {
+                        Ok(snap) => (
+                            if snap.title.is_empty() {
+                                self.config.start_url.host.clone()
+                            } else {
+                                snap.title
+                            },
+                            describe_page(&self.config.start_url, snap.fields.len()),
+                        ),
+                        Err(_) => (
+                            self.config.start_url.host.clone(),
+                            describe_page(&self.config.start_url, 0),
+                        ),
+                    },
+                    Err(e) => (
+                        "atsisbroken".to_string(),
+                        format!(
+                            "Couldn't load {url_str}\n\n{e}\n\nThe rendering engine here is the \
+                             static-HTML scaffold; full HTML/CSS/JS rendering lights up when \
+                             stylo + WebRender + mozjs land in subsequent commits."
+                        ),
+                    ),
+                };
+                state.set_page(url_str, title, body);
+                self.state = Some(state);
             }
             Err(e) => {
                 self.startup_error = Some(BrowserError::Other(e));
@@ -151,6 +174,44 @@ impl ApplicationHandler for App {
             }
             _ => {}
         }
+    }
+}
+
+/// Describe a freshly-navigated page in human-readable text.
+/// Used as the body when the engine succeeded but didn't produce
+/// rich content yet (most cases today since the engine is just
+/// the HTML parser; CSS + paint + JS come later).
+fn describe_page(url: &Url, field_count: usize) -> String {
+    if url.is_internal() {
+        match url.host.as_str() {
+            "home" => "atsisbroken: the browser for filling job applications.\n\n\
+                      Connect what you've made. We'll write your applications from it.\n\n\
+                      \tatsisbroken://connections    your sources\n\
+                      \tatsisbroken://summary        what we say about you\n\
+                      \tatsisbroken://discover       jobs from public boards\n\
+                      \tatsisbroken://applications   your ledger\n\n\
+                      Type any URL above to navigate."
+                .to_string(),
+            "connections" => "Your connections.\n\n\
+                              No sources connected yet. Click + Add a source to begin.\n\
+                              (Connection tile UI lands in the next commit; \
+                              today this page is a placeholder.)"
+                .to_string(),
+            "summary" => "Your auto-summary.\n\n\
+                          Connect a source first. We need products to summarize from."
+                .to_string(),
+            other => format!("atsisbroken://{other} — page not yet implemented."),
+        }
+    } else if field_count > 0 {
+        format!(
+            "Loaded {url}.\n\n\
+             {field_count} form field(s) detected. \
+             The form-fill flow lights up when stylo + mozjs land — today the \
+             engine identifies fields but can't yet drive them through the \
+             new rendering stack."
+        )
+    } else {
+        format!("Loaded {url}.\n\nNo form fields detected on this page.")
     }
 }
 

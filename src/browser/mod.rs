@@ -45,10 +45,13 @@
 
 #![cfg(feature = "browser")]
 
+mod connector;
 mod engine;
 mod fingerprint;
 mod input;
+mod products;
 mod shell;
+mod text;
 mod url;
 mod window;
 
