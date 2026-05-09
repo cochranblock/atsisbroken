@@ -35,7 +35,7 @@ pub struct InternalPage {
 /// internal URLs return a "page not found" page that includes
 /// the requested path so the user can see what was attempted.
 pub fn render(url: &Url) -> InternalPage {
-    match url.host.as_str() {
+    match url.host() {
         "home" => home(),
         "connections" => connections(),
         "summary" => summary(),
@@ -51,7 +51,7 @@ pub fn render(url: &Url) -> InternalPage {
         "settings" => settings(),
         "audit-bar" => audit_bar(),
         "onboarding" => onboarding(),
-        other => not_found(other, &url.path),
+        other => not_found(other, url.path()),
     }
 }
 

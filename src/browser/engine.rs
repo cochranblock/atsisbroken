@@ -181,7 +181,7 @@ impl Engine for StaticHtmlEngine {
         if !url.is_network() {
             return Err(EngineError::Network(format!(
                 "scheme {:?} not supported by StaticHtmlEngine",
-                url.scheme
+                url.scheme()
             )));
         }
         let url_str = url.to_string();
@@ -646,14 +646,13 @@ mod tests {
     #[test]
     fn navigate_unsupported_scheme_errors() {
         let mut e = StaticHtmlEngine::new().unwrap();
-        let url = Url {
-            scheme: "ftp".into(),
-            host: "example.com".into(),
-            port: None,
-            path: "/x".into(),
-            query: String::new(),
-            fragment: String::new(),
-        };
+        // Url's parser is permissive about the scheme — it accepts
+        // any "<scheme>://<host>..." string. The engine then
+        // rejects anything that isn't http(s) or atsisbroken://.
+        // So the construction goes through the parser (no struct
+        // literal: fields are private after audit-fix-#17), and
+        // the engine surfaces the unsupported-scheme error.
+        let url: Url = "ftp://example.com/x".parse().unwrap();
         match e.navigate(&url) {
             Err(EngineError::Network(_)) => {}
             other => panic!("expected Network err, got {other:?}"),

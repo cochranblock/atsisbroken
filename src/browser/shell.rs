@@ -181,10 +181,10 @@ fn compose_page_text(
     match nav {
         Ok(()) => match snap {
             Ok(s) => (
-                if s.title.is_empty() { url.host.clone() } else { s.title },
+                if s.title.is_empty() { url.host().to_string() } else { s.title },
                 s.body,
             ),
-            Err(_) => (url.host.clone(), String::new()),
+            Err(_) => (url.host().to_string(), String::new()),
         },
         Err(e) => (
             "atsisbroken".to_string(),
@@ -217,7 +217,7 @@ fn spawn_navigate(url: Url, proxy: EventLoopProxy<NavMsg>) {
             Ok(_) => match engine.snapshot_fields() {
                 Ok(snap) => {
                     let title = if snap.title.is_empty() {
-                        url.host.clone()
+                        url.host().to_string()
                     } else {
                         snap.title
                     };
@@ -284,7 +284,7 @@ impl ApplicationHandler<NavMsg> for App {
                     // when the worker returns. (Audit bug #11.)
                     state.set_page(
                         url_str.clone(),
-                        url.host.clone(),
+                        url.host().to_string(),
                         format!("Loading {url_str}…"),
                     );
                     spawn_navigate(url, self.proxy.clone());
@@ -382,7 +382,7 @@ mod tests {
         // initial fetch.
         let c = BrowserConfig::default();
         assert!(c.start_url.is_network());
-        assert_eq!(c.start_url.host, "atsisbroken.cochranblock.org");
+        assert_eq!(c.start_url.host(), "atsisbroken.cochranblock.org");
     }
 
     #[test]

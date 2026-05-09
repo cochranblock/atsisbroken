@@ -10,21 +10,25 @@
 use std::fmt;
 use std::str::FromStr;
 
+/// Parsed URL. Every external constructor goes through
+/// [`Url::from_str`] (the `s.parse::<Url>()` form) or one of the
+/// in-module sanctioned helpers ([`Url::internal`], [`Url::home`],
+/// [`Url::internal_home`]). Fields are private so a caller can't
+/// bypass the parser by writing a struct literal — the audit
+/// previously flagged the all-`pub` shape as a discipline gap;
+/// fields read via accessors now.
+///
+/// If a future caller needs a constructor the parser can't
+/// express, add a named helper in this module rather than
+/// exposing the fields.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Url {
-    /// "https" / "http" / "atsisbroken" (internal pages).
-    pub scheme: String,
-    /// "boards.greenhouse.io" / "" for atsisbroken:// pages.
-    pub host: String,
-    /// Optional non-default port. None means scheme default.
-    pub port: Option<u16>,
-    /// "/embed/job_app?for_organization=foo" — leading slash
-    /// preserved.
-    pub path: String,
-    /// Everything after `?`, no leading `?`. Empty when absent.
-    pub query: String,
-    /// Everything after `#`, no leading `#`. Empty when absent.
-    pub fragment: String,
+    scheme: String,
+    host: String,
+    port: Option<u16>,
+    path: String,
+    query: String,
+    fragment: String,
 }
 
 impl Url {
@@ -65,6 +69,38 @@ impl Url {
     /// the network landing page took over.
     pub fn internal_home() -> Self {
         Self::internal("home")
+    }
+
+    // ─── Field accessors ─────────────────────────────────────────
+
+    /// Scheme — `"https"` / `"http"` / `"atsisbroken"` for
+    /// internal pages.
+    pub fn scheme(&self) -> &str {
+        &self.scheme
+    }
+    /// Host — `"boards.greenhouse.io"`, or the page slug for
+    /// internal `atsisbroken://` URLs (where the "host" is the
+    /// page name).
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+    /// Optional non-default port. `None` means "use the scheme's
+    /// default port".
+    pub fn port(&self) -> Option<u16> {
+        self.port
+    }
+    /// Path with leading `/` preserved. Empty for URLs that omit
+    /// the path component.
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+    /// Query string without the leading `?`. Empty when absent.
+    pub fn query(&self) -> &str {
+        &self.query
+    }
+    /// Fragment without the leading `#`. Empty when absent.
+    pub fn fragment(&self) -> &str {
+        &self.fragment
     }
 
     /// True when the URL points to one of our internal pages.
