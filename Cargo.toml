@@ -69,11 +69,16 @@ gui = [
 ]
 
 [dependencies]
-# The Cochran Block, LLC crates (paths; swap to crates.io or git when published).
-# kova-engine: inference loader + tokenization. We do NOT use its bundled
-# model story — atsisbroken's models are user-trained, not author-shipped.
-kova-engine    = { path = "../kova", default-features = false, features = ["inference"] }
-# Chromium DevTools Protocol client. Pure Rust. No JS toolchain, no extension store.
+# kova-engine was a path dep used only by the now-retired
+# ats_fixtures re-export + the legacy CDP e2e test (deleted in
+# 7a8bd0b). atsisbroken-the-browser carries its own engine
+# (winit + wgpu + html5ever + glyphon, with stylo + mozjs to
+# come) — no kova dep needed. If a future commit wants kova's
+# inference layer for an in-app classifier, it gets re-added
+# at that point.
+# Chromium DevTools Protocol client. Pure Rust. Kept while the
+# legacy CDP path exists as a fallback strategy; retires when
+# the new browser engine renders real ATS pages.
 chromiumoxide  = { version = "0.7", default-features = false, features = ["tokio-runtime"] }
 # Async runtime for the CDP client + trainer + inference loop.
 tokio          = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
