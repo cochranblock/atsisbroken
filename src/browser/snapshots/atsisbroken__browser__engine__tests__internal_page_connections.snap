@@ -1,0 +1,69 @@
+---
+source: src/browser/engine.rs
+expression: snap
+---
+URL: atsisbroken://connections
+Title: Your connections
+
+Active (0)
+
+    No connections yet. Pick a source below to start.
+
+Available
+
+  Public-handle services (no auth, just your username)
+
+    GitHub               Code, READMEs, recent commit messages.
+                         atsisbroken://connect/github
+
+    Stack Overflow       Q&A history, vote-weighted answers.
+                         atsisbroken://connect/stackoverflow
+
+    Hacker News          Comments + submissions, karma-weighted.
+                         atsisbroken://connect/hn
+
+    crates.io            Published Rust packages.
+                         atsisbroken://connect/cratesio
+
+    npm                  Published Node packages.
+                         atsisbroken://connect/npm
+
+    Bluesky              AT Protocol — public posts.
+                         atsisbroken://connect/bluesky
+
+    Mastodon             ActivityPub — public posts.
+                         atsisbroken://connect/mastodon
+
+    arXiv                Academic papers by author.
+                         atsisbroken://connect/arxiv
+
+    USPTO Patents        Granted + pending patents.
+                         atsisbroken://connect/uspto
+
+    Personal blog        Auto-discover via RSS / Atom / sitemap.
+                         atsisbroken://connect/blog
+
+  OAuth services (sign in via this browser, no system handoff)
+
+    LinkedIn             Profile + positions.
+                         atsisbroken://connect/linkedin
+
+    Reddit               Vote-weighted comment + submission history.
+                         atsisbroken://connect/reddit
+
+  Session-cookie services (sign in normally, we capture the cookie)
+
+    Substack             Your paid newsletter content.
+                         atsisbroken://connect/substack
+
+    Medium               Member-only stories.
+                         atsisbroken://connect/medium
+
+  More
+
+    16 additional services in the full list:
+    atsisbroken://sources
+
+Each connection's data lives in ~/.atsisbroken/. Disconnect any time
+to delete the local cache. Network audit is live at
+atsisbroken://network — every byte we fetch is visible.

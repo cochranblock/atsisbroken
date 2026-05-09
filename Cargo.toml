@@ -122,6 +122,17 @@ markup5ever_rcdom  = { version = "0.5.0-unofficial", optional = true }
 # minor tracks one wgpu major).
 glyphon            = { version = "0.7", optional = true }
 
+[dev-dependencies]
+# Snapshot testing for internal-page text bodies. Each page's output
+# is a fixture file under src/browser/snapshots/; CI fails when a
+# page's text drifts unexpectedly. Running `cargo insta accept`
+# bumps the fixtures.
+insta              = "1.43"
+# Property-based fuzzing for the URL parser. Generates random byte
+# sequences and asserts the parser doesn't panic, doesn't loop, and
+# round-trips valid input.
+proptest           = "1.7"
+
 
 
 # ─── DIAMOND RUST BINARY ARCHITECTURE ───────────────────────────────

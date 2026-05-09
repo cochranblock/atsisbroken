@@ -1,0 +1,23 @@
+---
+source: src/browser/engine.rs
+expression: snap
+---
+URL: atsisbroken://home
+Title: atsisbroken
+
+The browser for filling job applications.
+
+Connect what you've made. We'll write your applications from it —
+verbatim from your own GitHub, blog, Stack Overflow, and the rest.
+Nothing leaves this device unless you say so.
+
+Where to start
+
+    atsisbroken://connections     your sources
+    atsisbroken://summary         what we say about you
+    atsisbroken://discover        public job boards, aggregated
+    atsisbroken://applications    your submission ledger
+    atsisbroken://network         every outbound call, live
+    atsisbroken://settings        modes, identities, privacy
+
+The address bar at the top accepts any URL — internal or web.

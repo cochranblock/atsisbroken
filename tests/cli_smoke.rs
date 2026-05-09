@@ -221,3 +221,114 @@ fn cdp_probe_without_running_chromium_exits_cleanly() {
     assert!(out.status.success());
     let _ = std::fs::remove_dir_all(home);
 }
+
+// ─── Inspect subcommand — exercises the engine's internal-page
+//     router via subprocess. Catches: clap wiring, internal::render
+//     match-arm coverage, page body content drift. Each test runs
+//     the actual built binary, parses stdout, asserts content.
+//     These are integration tests by definition — they cross
+//     process boundaries and exercise the full main fn.
+
+#[cfg(feature = "gui")]
+#[test]
+fn inspect_default_url_renders_home_page() {
+    let out = Command::new(bin_path())
+        .arg("inspect")
+        .output()
+        .expect("run inspect");
+    assert!(out.status.success(), "inspect (default URL) must exit 0");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("URL: atsisbroken://home"), "stdout: {stdout}");
+    assert!(stdout.contains("Title: atsisbroken"));
+    assert!(stdout.contains("Fields: 0"));
+    assert!(stdout.contains("atsisbroken://connections"));
+}
+
+#[cfg(feature = "gui")]
+#[test]
+fn inspect_connections_page_lists_services() {
+    let out = Command::new(bin_path())
+        .arg("inspect")
+        .arg("--url")
+        .arg("atsisbroken://connections")
+        .output()
+        .expect("run inspect connections");
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Title: Your connections"));
+    // Public-handle services
+    for service in ["GitHub", "Stack Overflow", "Hacker News", "crates.io"] {
+        assert!(stdout.contains(service), "missing {service}: {stdout}");
+    }
+    // OAuth services
+    assert!(stdout.contains("LinkedIn"));
+    // Session-cookie services
+    assert!(stdout.contains("Substack"));
+    // Connect targets
+    assert!(stdout.contains("atsisbroken://connect/github"));
+}
+
+#[cfg(feature = "gui")]
+#[test]
+fn inspect_unknown_internal_url_returns_not_found() {
+    let out = Command::new(bin_path())
+        .arg("inspect")
+        .arg("--url")
+        .arg("atsisbroken://nope")
+        .output()
+        .expect("run inspect nope");
+    assert!(out.status.success(), "not-found is still a successful render");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Title: Page not found"));
+    assert!(stdout.contains("atsisbroken://nope"));
+}
+
+#[cfg(feature = "gui")]
+#[test]
+fn inspect_invalid_url_errors_with_helpful_message() {
+    let out = Command::new(bin_path())
+        .arg("inspect")
+        .arg("--url")
+        .arg("")
+        .output()
+        .expect("run inspect empty");
+    assert!(!out.status.success(), "empty URL must error");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("invalid"), "stderr should explain: {stderr}");
+}
+
+#[cfg(feature = "gui")]
+#[test]
+fn inspect_fingerprint_page_documents_webdriver_false() {
+    // Pin the user-visible contract: navigator.webdriver=false
+    // is documented on the fingerprint page. A regression here
+    // would mean the contract changed without updating the
+    // public surface.
+    let out = Command::new(bin_path())
+        .arg("inspect")
+        .arg("--url")
+        .arg("atsisbroken://fingerprint")
+        .output()
+        .expect("run inspect fingerprint");
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("navigator.webdriver"));
+    assert!(stdout.contains("false"));
+}
+
+#[cfg(feature = "gui")]
+#[test]
+fn inspect_summary_page_directs_empty_graph_to_connections() {
+    // Empty-graph state should tell the user where to go next
+    // instead of silently rendering an empty bio. Pin that
+    // user-experience contract.
+    let out = Command::new(bin_path())
+        .arg("inspect")
+        .arg("--url")
+        .arg("atsisbroken://summary")
+        .output()
+        .expect("run inspect summary");
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("atsisbroken://connections"));
+}

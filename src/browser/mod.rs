@@ -56,12 +56,37 @@ mod text;
 mod url;
 mod window;
 
-pub use engine::{Engine, NavigateOutcome, PageSnapshot};
+pub use engine::{Engine, EngineError, NavigateOutcome, PageSnapshot, StaticHtmlEngine};
 pub use fingerprint::FingerprintProfile;
 pub use input::{HumanInputProfile, KeyTimingDistribution};
 pub use shell::{run, BrowserConfig, BrowserError};
 pub use url::Url;
 pub use window::WindowState;
+
+/// Headless inspect — render the page for `url` without opening
+/// a window. Returns a [`PageSnapshot`] (URL, title, body, fields).
+/// Used by the `atsisbroken inspect` CLI subcommand and by
+/// integration tests that need to verify page output without GUI
+/// dependencies.
+///
+/// For internal `atsisbroken://` URLs we route through the
+/// in-process page renderer directly — no HTTP client, no tokio
+/// blocking-runtime drop, no engine lifecycle. For network URLs
+/// the full StaticHtmlEngine is constructed.
+pub fn inspect(url: &Url) -> Result<PageSnapshot, EngineError> {
+    if url.is_internal() {
+        let page = internal::render(url);
+        return Ok(PageSnapshot {
+            url: url.to_string(),
+            title: page.title,
+            body: page.body,
+            fields: Vec::new(),
+        });
+    }
+    let mut engine = StaticHtmlEngine::new()?;
+    engine.navigate(url)?;
+    engine.snapshot_fields()
+}
 
 /// Public entry point. Construct a [`BrowserConfig`] and call
 /// [`run`] from `main`. The function blocks until the user closes

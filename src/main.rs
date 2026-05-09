@@ -174,6 +174,18 @@ enum Cmd {
         #[arg(long)]
         url: Option<String>,
     },
+    /// Print a rendered page's title + body to stdout without
+    /// opening a window. Used for scripting, headless inspection,
+    /// and integration tests. Same routing as `browse` — internal
+    /// pages render in-process via the page router; network URLs
+    /// fetch + parse but only the body text is printed (no DOM
+    /// dump).
+    #[cfg(feature = "gui")]
+    Inspect {
+        /// URL to inspect. Defaults to atsisbroken://home.
+        #[arg(long)]
+        url: Option<String>,
+    },
     /// Print the current configuration.
     Status,
 }
@@ -210,6 +222,8 @@ async fn main() -> Result<()> {
         Some(Cmd::SyncGithub { handle }) => cmd_sync_github(handle).await,
         #[cfg(feature = "gui")]
         Some(Cmd::Browse { url }) => cmd_browse(url),
+        #[cfg(feature = "gui")]
+        Some(Cmd::Inspect { url }) => cmd_inspect(url),
         Some(Cmd::Status) => cmd_status(profile_override).await,
         Some(Cmd::Tui) => cmd_tui().await,
         Some(Cmd::TuiSnapshot { tab, width, height }) => cmd_tui_snapshot(tab, width, height).await,
@@ -226,6 +240,24 @@ fn cmd_browse(url: Option<String>) -> Result<()> {
             .map_err(|e| anyhow!("invalid --url {s:?}: {e}"))?;
     }
     launch(config).map_err(|e| anyhow!("browser: {e}"))?;
+    Ok(())
+}
+
+#[cfg(feature = "gui")]
+fn cmd_inspect(url: Option<String>) -> Result<()> {
+    use atsisbroken::browser::{inspect, Url};
+    let url: Url = match url {
+        Some(s) => s
+            .parse()
+            .map_err(|e| anyhow!("invalid --url {s:?}: {e}"))?,
+        None => Url::home(),
+    };
+    let snap = inspect(&url).map_err(|e| anyhow!("inspect: {e}"))?;
+    println!("URL: {}", snap.url);
+    println!("Title: {}", snap.title);
+    println!("Fields: {}", snap.fields.len());
+    println!();
+    println!("{}", snap.body);
     Ok(())
 }
 

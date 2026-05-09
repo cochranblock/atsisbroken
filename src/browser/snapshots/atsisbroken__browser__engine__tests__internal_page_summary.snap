@@ -1,0 +1,22 @@
+---
+source: src/browser/engine.rs
+expression: snap
+---
+URL: atsisbroken://summary
+Title: Your auto-summary
+
+Bio
+    Connect a source first. We need products to summarize from.
+    [atsisbroken://connections]
+
+Themes
+    No themes detected — graph is empty.
+
+Coverage gaps
+    Frontend / UX work — connect a portfolio source.
+    Speaking / talks — connect YouTube or paste manually.
+    Long-form writing — connect a blog or Substack.
+
+Test against a JD
+    Paste a job description here once your sources are connected;
+    we'll preview what your application would say.

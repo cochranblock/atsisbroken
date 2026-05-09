@@ -1,0 +1,20 @@
+---
+source: src/browser/engine.rs
+expression: snap
+---
+URL: atsisbroken://shield
+Title: Tracker shield
+
+Default rule list ships with the binary. Distilled from EasyList
++ EasyPrivacy + ATS-vendor-specific analytics surfaces.
+
+Categories blocked by default:
+    Analytics      Google, Mixpanel, Amplitude, Heap, Segment
+    Behavioral fp  FullStory, Hotjar, ContentSquare
+    Ad tech        DoubleClick, Taboola, Outbrain
+    Social pixels  Facebook, LinkedIn, Twitter
+    Cookie walls   Auto-dismissed (Reject All)
+    ATS telemetry  Greenhouse Segment, Lever Heap, Workday
+
+Live blocking implementation comes with the JS-capable engine.
+Today this page documents what shield will do.

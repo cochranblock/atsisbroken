@@ -1,0 +1,18 @@
+---
+source: src/browser/engine.rs
+expression: snap
+---
+URL: atsisbroken://no-such-page/with/path
+Title: Page not found
+
+The internal page atsisbroken://no-such-page/with/path doesn't exist (yet).
+
+Try one of these:
+
+    atsisbroken://home
+    atsisbroken://connections
+    atsisbroken://summary
+    atsisbroken://applications
+
+Or navigate to any web URL via the address bar — atsisbroken
+renders pages from the open web too.

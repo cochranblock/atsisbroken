@@ -231,4 +231,77 @@ mod tests {
         let r = "http://host:99999/".parse::<Url>();
         assert!(r.is_err());
     }
+
+    // ─── Property-based fuzz tests ────────────────────────────────────────
+    //
+    // Generate random byte sequences and assert the parser:
+    // 1. Never panics (use `.parse::<Url>()` — panic-on-Err is
+    //    the only signal this catches; we don't expect Ok on
+    //    arbitrary inputs).
+    // 2. When it returns Ok, Display round-trips equivalently
+    //    (modulo the bare-hostname → https:// normalization).
+    // 3. Doesn't loop / hang on adversarial input.
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(500))]
+
+        #[test]
+        fn url_parser_does_not_panic_on_arbitrary_bytes(bytes: Vec<u8>) {
+            // Convert to a UTF-8 string lossily; the parser
+            // takes &str so non-UTF-8 can't reach it directly,
+            // but URLs in the wild include weird percent-encoded
+            // sequences and Unicode. Lossy conversion produces
+            // the kind of input the parser sees in practice.
+            let s = String::from_utf8_lossy(&bytes);
+            let _ = s.parse::<Url>(); // panic = test fail
+        }
+
+        #[test]
+        fn url_parser_does_not_panic_on_random_ascii(
+            s in "[\\PC]{0,128}"
+        ) {
+            // \\PC = "any printable character" in proptest's
+            // regex spec. Bounded length keeps the fuzz tractable.
+            let _ = s.parse::<Url>();
+        }
+
+        #[test]
+        fn url_with_valid_https_round_trips(
+            host in "[a-z]{1,16}\\.[a-z]{2,4}",
+            path in "/[a-z0-9/]{0,32}"
+        ) {
+            let original = format!("https://{host}{path}");
+            let url: Url = original.parse().unwrap();
+            assert_eq!(url.scheme, "https");
+            assert_eq!(url.host, host);
+            assert_eq!(url.path, path);
+            assert_eq!(url.to_string(), original);
+        }
+
+        #[test]
+        fn url_with_arbitrary_port_round_trips(
+            host in "[a-z]{1,16}",
+            port in 1u16..=65535,
+        ) {
+            let original = format!("http://{host}:{port}/");
+            let url: Url = original.parse().unwrap();
+            assert_eq!(url.host, host);
+            assert_eq!(url.port, Some(port));
+            assert_eq!(url.to_string(), original);
+        }
+
+        #[test]
+        fn atsisbroken_internal_url_round_trips(
+            page in "[a-z]{1,16}"
+        ) {
+            let original = format!("atsisbroken://{page}");
+            let url: Url = original.parse().unwrap();
+            assert_eq!(url.scheme, "atsisbroken");
+            assert_eq!(url.host, page);
+            assert!(url.is_internal());
+            assert_eq!(url.to_string(), original);
+        }
+    }
 }
