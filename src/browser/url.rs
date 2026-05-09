@@ -41,8 +41,29 @@ impl Url {
         }
     }
 
-    /// Default homepage on browser launch.
+    /// Default homepage on browser launch — the live atsisbroken
+    /// landing page. Until the subdomain's DNS lands the launched
+    /// browser will surface a "Couldn't load…" page (rendered by
+    /// the audit-fix-#11 worker thread); when DNS goes live the
+    /// browser starts serving the real page on every launch with
+    /// no code change. The in-process `atsisbroken://home` page
+    /// stays reachable as the offline / scaffolding fallback —
+    /// see [`Self::internal_home`].
     pub fn home() -> Self {
+        Url {
+            scheme: "https".into(),
+            host: "atsisbroken.cochranblock.org".into(),
+            port: None,
+            path: "/".into(),
+            query: String::new(),
+            fragment: String::new(),
+        }
+    }
+
+    /// The in-process `atsisbroken://home` page. Reachable
+    /// directly via the address bar; was the default home before
+    /// the network landing page took over.
+    pub fn internal_home() -> Self {
         Self::internal("home")
     }
 
@@ -215,8 +236,19 @@ mod tests {
     }
 
     #[test]
-    fn home_is_internal_home() {
+    fn home_is_network_landing_page() {
+        // The default home is the live landing page on the
+        // network. The in-process page is now reachable via
+        // Url::internal_home() instead.
         let h = Url::home();
+        assert!(h.is_network());
+        assert!(!h.is_internal());
+        assert_eq!(h.to_string(), "https://atsisbroken.cochranblock.org/");
+    }
+
+    #[test]
+    fn internal_home_is_atsisbroken_scheme() {
+        let h = Url::internal_home();
         assert!(h.is_internal());
         assert_eq!(h.to_string(), "atsisbroken://home");
     }

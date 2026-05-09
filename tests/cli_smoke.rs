@@ -231,12 +231,21 @@ fn cdp_probe_without_running_chromium_exits_cleanly() {
 
 #[cfg(feature = "gui")]
 #[test]
-fn inspect_default_url_renders_home_page() {
+fn inspect_internal_home_url_renders_home_page() {
+    // The in-process atsisbroken://home page is still reachable
+    // even after Url::home() flipped to the network landing
+    // page. Pin the internal route explicitly so this test
+    // doesn't depend on DNS for atsisbroken.cochranblock.org.
     let out = Command::new(bin_path())
         .arg("inspect")
+        .arg("--url")
+        .arg("atsisbroken://home")
         .output()
         .expect("run inspect");
-    assert!(out.status.success(), "inspect (default URL) must exit 0");
+    assert!(
+        out.status.success(),
+        "inspect atsisbroken://home must exit 0"
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("URL: atsisbroken://home"), "stdout: {stdout}");
     assert!(stdout.contains("Title: atsisbroken"));

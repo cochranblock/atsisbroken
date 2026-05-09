@@ -492,8 +492,11 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
-    fn home_renders_with_url_menu() {
-        let page = render(&Url::home());
+    fn internal_home_renders_with_url_menu() {
+        // The in-process home page (still reachable via
+        // atsisbroken://home, even though Url::home() now points
+        // at the live landing page).
+        let page = render(&Url::internal_home());
         assert_eq!(page.title, "atsisbroken");
         assert!(page.body.contains("atsisbroken://connections"));
         assert!(page.body.contains("atsisbroken://summary"));

@@ -375,10 +375,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_config_has_internal_home_start() {
+    fn default_config_starts_on_network_landing_page() {
+        // The default home is the live landing page. Network
+        // navigation goes through the audit-fix-#11 worker
+        // thread, so the OS event loop never blocks on the
+        // initial fetch.
         let c = BrowserConfig::default();
-        assert!(c.start_url.is_internal());
-        assert_eq!(c.start_url.host, "home");
+        assert!(c.start_url.is_network());
+        assert_eq!(c.start_url.host, "atsisbroken.cochranblock.org");
     }
 
     #[test]
