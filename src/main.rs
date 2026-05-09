@@ -199,35 +199,51 @@ fn parse_mode(s: &str) -> Result<Mode, String> {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+// Sync main. Async-needing commands (chromiumoxide, async reqwest)
+// construct a tokio runtime explicitly via `tokio_run`. The default
+// path stays sync so reqwest::blocking inside cmd_browse / cmd_inspect
+// never collides with a wrapping runtime — the bug from the Rust
+// audit (#2). Network IO is the natural blocker for those flows.
+fn main() -> Result<()> {
     let cli = Cli::parse();
     let profile_override = cli.profile.as_deref().map(std::path::PathBuf::from);
     match cli.cmd {
-        None => cmd_tui().await,
-        Some(Cmd::Init { resume }) => cmd_init(resume, profile_override).await,
-        Some(Cmd::Run { mode, cdp, strategy, url }) => cmd_run(mode, cdp, strategy, url, profile_override).await,
-        Some(Cmd::Userscript) => cmd_userscript(profile_override).await,
-        Some(Cmd::Bookmarklet) => cmd_bookmarklet(profile_override).await,
-        Some(Cmd::Copy { key }) => cmd_copy(key, profile_override).await,
-        Some(Cmd::Speak) => cmd_speak(profile_override).await,
-        Some(Cmd::CdpProbe) => cmd_cdp_probe().await,
-        Some(Cmd::Graduate { yes, back }) => cmd_graduate(yes, back).await,
-        Some(Cmd::Sync) => cmd_sync().await,
-        Some(Cmd::Export { out }) => cmd_export(out).await,
-        Some(Cmd::Bridge) => cmd_bridge().await,
+        None => cmd_tui(),
+        Some(Cmd::Init { resume }) => cmd_init(resume, profile_override),
+        Some(Cmd::Run { mode, cdp, strategy, url }) => {
+            tokio_run(cmd_run(mode, cdp, strategy, url, profile_override))
+        }
+        Some(Cmd::Userscript) => cmd_userscript(profile_override),
+        Some(Cmd::Bookmarklet) => cmd_bookmarklet(profile_override),
+        Some(Cmd::Copy { key }) => cmd_copy(key, profile_override),
+        Some(Cmd::Speak) => cmd_speak(profile_override),
+        Some(Cmd::CdpProbe) => tokio_run(cmd_cdp_probe()),
+        Some(Cmd::Graduate { yes, back }) => cmd_graduate(yes, back),
+        Some(Cmd::Sync) => cmd_sync(),
+        Some(Cmd::Export { out }) => cmd_export(out),
+        Some(Cmd::Bridge) => cmd_bridge(),
         Some(Cmd::InstallBridge { extension_id, binary }) => cmd_install_bridge(extension_id, binary),
-        Some(Cmd::Feedback) => cmd_feedback().await,
-        Some(Cmd::ConnectGithub { handle, token }) => cmd_connect_github(handle, token).await,
-        Some(Cmd::SyncGithub { handle }) => cmd_sync_github(handle).await,
+        Some(Cmd::Feedback) => cmd_feedback(),
+        Some(Cmd::ConnectGithub { handle, token }) => cmd_connect_github(handle, token),
+        Some(Cmd::SyncGithub { handle }) => tokio_run(cmd_sync_github(handle)),
         #[cfg(feature = "gui")]
         Some(Cmd::Browse { url }) => cmd_browse(url),
         #[cfg(feature = "gui")]
         Some(Cmd::Inspect { url }) => cmd_inspect(url),
-        Some(Cmd::Status) => cmd_status(profile_override).await,
-        Some(Cmd::Tui) => cmd_tui().await,
-        Some(Cmd::TuiSnapshot { tab, width, height }) => cmd_tui_snapshot(tab, width, height).await,
+        Some(Cmd::Status) => cmd_status(profile_override),
+        Some(Cmd::Tui) => cmd_tui(),
+        Some(Cmd::TuiSnapshot { tab, width, height }) => cmd_tui_snapshot(tab, width, height),
     }
+}
+
+/// Construct a tokio runtime locally and block_on the future.
+/// Used only for commands that genuinely need tokio (chromiumoxide
+/// CDP client + async reqwest::Client in github sync). Most commands
+/// don't need it; the bare-sync default is what fixes the
+/// "reqwest::blocking inside #[tokio::main]" panic.
+fn tokio_run<F: std::future::Future<Output = Result<()>>>(future: F) -> Result<()> {
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(future)
 }
 
 #[cfg(feature = "gui")]
@@ -262,19 +278,19 @@ fn cmd_inspect(url: Option<String>) -> Result<()> {
 }
 
 #[cfg(feature = "tui")]
-async fn cmd_tui() -> Result<()> {
+fn cmd_tui() -> Result<()> {
     atsisbroken::tui::run().map_err(|e| anyhow!("{e}"))
 }
 
 #[cfg(not(feature = "tui"))]
-async fn cmd_tui() -> Result<()> {
+fn cmd_tui() -> Result<()> {
     Err(anyhow!(
         "atsisbroken was built without the `tui` feature. Run a subcommand instead, or rebuild with --features tui."
     ))
 }
 
 #[cfg(feature = "tui")]
-async fn cmd_tui_snapshot(tab: usize, width: u16, height: u16) -> Result<()> {
+fn cmd_tui_snapshot(tab: usize, width: u16, height: u16) -> Result<()> {
     let html = atsisbroken::tui::render_html_for_screenshot(tab, width, height)
         .map_err(|e| anyhow!("{e}"))?;
     print!("{html}");
@@ -282,11 +298,11 @@ async fn cmd_tui_snapshot(tab: usize, width: u16, height: u16) -> Result<()> {
 }
 
 #[cfg(not(feature = "tui"))]
-async fn cmd_tui_snapshot(_tab: usize, _width: u16, _height: u16) -> Result<()> {
+fn cmd_tui_snapshot(_tab: usize, _width: u16, _height: u16) -> Result<()> {
     Err(anyhow!("tui feature not built"))
 }
 
-async fn cmd_init(resume_path: Option<String>, profile_override: Option<std::path::PathBuf>) -> Result<()> {
+fn cmd_init(resume_path: Option<String>, profile_override: Option<std::path::PathBuf>) -> Result<()> {
     let text = match resume_path {
         Some(path) => std::fs::read_to_string(&path)
             .with_context(|| format!("read resume file {path}"))?,
@@ -436,19 +452,19 @@ fn load_profile_or_hint(override_path: Option<&std::path::Path>) -> Result<Profi
     Ok(toml::from_str(&text).context("parse profile.toml")?)
 }
 
-async fn cmd_userscript(profile_override: Option<std::path::PathBuf>) -> Result<()> {
+fn cmd_userscript(profile_override: Option<std::path::PathBuf>) -> Result<()> {
     let p = load_profile_or_hint(profile_override.as_deref())?;
     print!("{}", strategy::userscript(&p));
     Ok(())
 }
 
-async fn cmd_bookmarklet(profile_override: Option<std::path::PathBuf>) -> Result<()> {
+fn cmd_bookmarklet(profile_override: Option<std::path::PathBuf>) -> Result<()> {
     let p = load_profile_or_hint(profile_override.as_deref())?;
     println!("{}", strategy::bookmarklet(&p));
     Ok(())
 }
 
-async fn cmd_copy(key: String, profile_override: Option<std::path::PathBuf>) -> Result<()> {
+fn cmd_copy(key: String, profile_override: Option<std::path::PathBuf>) -> Result<()> {
     let p = load_profile_or_hint(profile_override.as_deref())?;
     let value = match key.as_str() {
         "full_name" => p.full_name,
@@ -472,7 +488,7 @@ async fn cmd_copy(key: String, profile_override: Option<std::path::PathBuf>) -> 
     Ok(())
 }
 
-async fn cmd_speak(profile_override: Option<std::path::PathBuf>) -> Result<()> {
+fn cmd_speak(profile_override: Option<std::path::PathBuf>) -> Result<()> {
     let p = load_profile_or_hint(profile_override.as_deref())?;
     strategy::speak(&p, std::io::stdout())?;
     Ok(())
@@ -598,7 +614,7 @@ mod tests {
     }
 }
 
-async fn cmd_graduate(yes: bool, back: bool) -> Result<()> {
+fn cmd_graduate(yes: bool, back: bool) -> Result<()> {
     use atsisbroken::config::Config;
     use std::io::BufRead;
 
@@ -658,7 +674,7 @@ async fn cmd_graduate(yes: bool, back: bool) -> Result<()> {
     Ok(())
 }
 
-async fn cmd_sync() -> Result<()> {
+fn cmd_sync() -> Result<()> {
     let path = paths::feedback_jsonl_path();
     let q = FeedbackQueue::load_from(&path).context("load feedback queue")?;
     if q.is_empty() {
@@ -674,7 +690,7 @@ async fn cmd_sync() -> Result<()> {
     Ok(())
 }
 
-async fn cmd_export(out: String) -> Result<()> {
+fn cmd_export(out: String) -> Result<()> {
     let path = paths::feedback_jsonl_path();
     let q = FeedbackQueue::load_from(&path).context("load feedback queue")?;
     std::fs::write(&out, q.to_jsonl().context("serialize jsonl")?)
@@ -688,7 +704,7 @@ async fn cmd_export(out: String) -> Result<()> {
     Ok(())
 }
 
-async fn cmd_bridge() -> Result<()> {
+fn cmd_bridge() -> Result<()> {
     let path = paths::feedback_jsonl_path();
     let mut queue = FeedbackQueue::load_from(&path).context("load feedback queue")?;
     let stdin = std::io::stdin();
@@ -735,7 +751,7 @@ fn cmd_install_bridge(extension_id: String, binary: Option<String>) -> Result<()
     Ok(())
 }
 
-async fn cmd_feedback() -> Result<()> {
+fn cmd_feedback() -> Result<()> {
     use atsisbroken::learning::{CorrectionOverlay, FeedbackStats};
     let path = paths::feedback_jsonl_path();
     let q = FeedbackQueue::load_from(&path).context("load feedback queue")?;
@@ -773,7 +789,7 @@ async fn cmd_feedback() -> Result<()> {
     Ok(())
 }
 
-async fn cmd_status(profile_override: Option<std::path::PathBuf>) -> Result<()> {
+fn cmd_status(profile_override: Option<std::path::PathBuf>) -> Result<()> {
     let profile_path = paths::profile_path_with_override(profile_override.as_deref());
     let exists = profile_path.exists();
     let populated = if exists {
@@ -825,7 +841,7 @@ async fn cmd_status(profile_override: Option<std::path::PathBuf>) -> Result<()> 
     Ok(())
 }
 
-async fn cmd_connect_github(handle: Option<String>, token: Option<String>) -> Result<()> {
+fn cmd_connect_github(handle: Option<String>, token: Option<String>) -> Result<()> {
     use atsisbroken::github;
     use std::io::Read;
 
