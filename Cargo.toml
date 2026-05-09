@@ -57,7 +57,7 @@ default = ["tui", "gui"]
 # Same exopack standalone crate the rest of the Cochran Block
 # portfolio uses — github.com/cochranblock/exopack with feature
 # `triple_sims`.
-tests = ["dep:exopack"]
+tests = ["dep:exopack", "dep:blake3"]
 # Optional terminal UI. ratatui + crossterm (~250 KB compiled). Drop with
 # `--no-default-features` for the leanest cross-compiled releases.
 tui = ["dep:ratatui", "dep:crossterm"]
@@ -139,6 +139,9 @@ glyphon            = { version = "0.7", optional = true }
 # capabilities (screenshot / baked_demo / interface) aren't
 # relevant to atsisbroken's gate yet.
 exopack            = { version = "0.2", git = "https://github.com/cochranblock/exopack", optional = true, features = ["triple_sims"] }
+# blake3 — fast, deterministic hash for the TRIPLE SIMS
+# byte-identical claim. Same crate kova uses elsewhere.
+blake3             = { version = "1", optional = true }
 
 [dev-dependencies]
 # Snapshot testing for internal-page text bodies. Each page's output
