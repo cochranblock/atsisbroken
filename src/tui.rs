@@ -155,7 +155,7 @@ mod runtime {
     use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::text::{Line, Span};
-    use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+    use ratatui::widgets::{Paragraph, Wrap};
     use ratatui::Terminal;
     use std::io::stdout;
 

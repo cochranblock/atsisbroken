@@ -20,6 +20,14 @@
 //! same pattern as the GitHubInventory and FeedbackQueue.
 
 #![cfg(feature = "gui")]
+// The composer (Phase K) and per-connector implementations
+// haven't landed yet, so today every type here is constructed
+// only by tests. cargo's view: dead code. The schema + the
+// save/load round-trip + the wire-format key contract pinned by
+// audit-fix-#9 are the actual product of this file — once
+// connectors and the composer ship, this allow goes away. See
+// browser/connector.rs for the same rationale.
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

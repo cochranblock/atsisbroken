@@ -65,7 +65,6 @@ pub enum TextFamily {
 pub struct TextLayer {
     font_system: FontSystem,
     swash_cache: SwashCache,
-    cache: Cache,
     viewport: Viewport,
     atlas: TextAtlas,
     renderer: TextRenderer,
@@ -91,6 +90,10 @@ impl TextLayer {
         mut font_system: FontSystem,
     ) -> Self {
         let swash_cache = SwashCache::new();
+        // Cache is `Arc<Inner>`; Viewport::new and TextAtlas::new
+        // each Clone it (Arc bump). The local goes out of scope
+        // here, but the inner pipelines stay alive via those two
+        // owners — no separate keep-alive needed on TextLayer.
         let cache = Cache::new(device);
         let viewport = Viewport::new(device, &cache);
         let mut atlas = TextAtlas::new(device, queue, &cache, surface_format);
@@ -105,7 +108,6 @@ impl TextLayer {
         Self {
             font_system,
             swash_cache,
-            cache,
             viewport,
             atlas,
             renderer,

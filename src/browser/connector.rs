@@ -10,6 +10,14 @@
 //! only carries the enum + trait + connection state.
 
 #![cfg(feature = "gui")]
+// The composer (Phase K) and per-connector implementations
+// haven't landed yet, so today every type here is constructed
+// only by tests. cargo's view: dead code. The wire format and
+// auth-shape contracts the enum encodes are the actual product
+// of this file — once a connector ships, this allow disappears
+// on its own. Module-level allow keeps stderr clean during the
+// scaffolding phase.
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 
