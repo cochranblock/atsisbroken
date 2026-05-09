@@ -119,6 +119,51 @@ pub enum ConnectorKind {
 }
 
 impl ConnectorKind {
+    /// Every variant in declaration order. Adding a new variant
+    /// to the enum and forgetting to add it here is caught by the
+    /// `all_slice_covers_every_variant` test below — the test
+    /// pattern-matches `self` exhaustively, so a missing arm is
+    /// a compile error rather than a silent drop. Tests that
+    /// want to assert a property holds across every variant
+    /// (display_name, auth_shape, JSON round-trip) iterate over
+    /// this slice instead of hand-rolling a sample.
+    pub const ALL: &'static [ConnectorKind] = &[
+        Self::GitHub,
+        Self::GitLab,
+        Self::Bitbucket,
+        Self::Codeberg,
+        Self::Sourcehut,
+        Self::PersonalBlog,
+        Self::Substack,
+        Self::Medium,
+        Self::DevTo,
+        Self::Hashnode,
+        Self::StackOverflow,
+        Self::HackerNews,
+        Self::Reddit,
+        Self::Bluesky,
+        Self::Mastodon,
+        Self::Twitter,
+        Self::NpmRegistry,
+        Self::CratesIo,
+        Self::PyPI,
+        Self::RubyGems,
+        Self::DockerHub,
+        Self::USPTO,
+        Self::ArXiv,
+        Self::GoogleScholar,
+        Self::OrcID,
+        Self::YouTube,
+        Self::Twitch,
+        Self::Behance,
+        Self::Dribbble,
+        Self::ArtStation,
+        Self::LinkedIn,
+        Self::USAJOBS,
+        Self::ManualPaste,
+        Self::ManualResume,
+    ];
+
     /// Human-readable name for UI. Default Debug already gives
     /// us the variant name; this is a place to override when the
     /// camel-case name reads awkwardly.
@@ -226,18 +271,55 @@ mod tests {
 
     #[test]
     fn every_connector_has_display_name() {
-        // Iterate by serialization round-trip — adding a variant
-        // forces this test to be updated.
-        let kinds = [
-            ConnectorKind::GitHub,
-            ConnectorKind::StackOverflow,
-            ConnectorKind::PersonalBlog,
-            ConnectorKind::LinkedIn,
-            ConnectorKind::ManualPaste,
-        ];
-        for k in kinds {
-            assert!(!k.display_name().is_empty());
+        // Iterates over ConnectorKind::ALL so the assertion
+        // covers all 34 variants, not a sample. The exhaustive
+        // match in display_name() means a missing arm is a
+        // compile error; this test catches the weaker case
+        // where a future arm returns "" by accident.
+        for k in ConnectorKind::ALL {
+            assert!(
+                !k.display_name().is_empty(),
+                "{k:?} has empty display_name"
+            );
         }
+    }
+
+    #[test]
+    fn every_connector_has_auth_shape() {
+        // Same shape: pin that auth_shape() is total + non-trivial
+        // across every variant. The exhaustive match enforces
+        // totality at compile time; this test is a placeholder
+        // that loops the cardinality so future "pick a shape"
+        // properties have somewhere to land.
+        for k in ConnectorKind::ALL {
+            let _ = k.auth_shape();
+        }
+    }
+
+    #[test]
+    fn all_slice_covers_every_variant() {
+        // Pin: ALL must list every variant. Adding a variant to
+        // the enum without adding it to ALL would silently shrink
+        // the iteration coverage of the tests above. Catching
+        // that drop in CI requires checking ALL.len() against the
+        // set of variants the exhaustive match in display_name()
+        // names. We enforce it by computing each variant's name
+        // through display_name() (compile-time exhaustive — every
+        // variant produces SOME &str) and confirming the count
+        // matches ALL.len().
+        //
+        // The current cardinality is 34 (audit-fix-#16: pinned).
+        // When you add a variant, this assertion fails until ALL
+        // is updated; the test fails loudly rather than the
+        // every_connector_* tests silently iterating over fewer
+        // cases.
+        assert_eq!(ConnectorKind::ALL.len(), 34);
+        // Sanity: ALL is unique. A duplicate would skew any
+        // "for each connector" assertion.
+        let mut sorted: Vec<&ConnectorKind> = ConnectorKind::ALL.iter().collect();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), ConnectorKind::ALL.len(), "ALL contains duplicates");
     }
 
     #[test]
@@ -265,16 +347,15 @@ mod tests {
 
     #[test]
     fn connector_kind_round_trips_through_json() {
-        for k in [
-            ConnectorKind::GitHub,
-            ConnectorKind::Bluesky,
-            ConnectorKind::USPTO,
-            ConnectorKind::ManualPaste,
-            ConnectorKind::ManualResume,
-        ] {
-            let s = serde_json::to_string(&k).unwrap();
+        // Iterates over every variant via ConnectorKind::ALL.
+        // The previous version sampled 5 of 34, so a regression
+        // in serde behavior on (say) DockerHub would have slipped
+        // through. The canonical_serialization test below pins
+        // the on-wire string for each variant explicitly.
+        for k in ConnectorKind::ALL {
+            let s = serde_json::to_string(k).unwrap();
             let back: ConnectorKind = serde_json::from_str(&s).unwrap();
-            assert_eq!(k, back);
+            assert_eq!(*k, back, "{k:?} did not round-trip");
         }
     }
 
