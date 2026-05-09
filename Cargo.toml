@@ -47,11 +47,21 @@ path = "src/lib.rs"
 [[bin]]
 name = "atsisbroken"
 path = "src/main.rs"
+# No tests embedded. Test code lives in the lib (Mode::from_cli_str,
+# Strategy::from_cli_str, etc.) and tests/cli_smoke.rs (end-to-end
+# CLI behavior). `test = false` tells cargo not to compile a test
+# harness for this bin and not to print an empty "0 passed" result
+# line for it.
+test = false
 
 [[bin]]
 name = "atsisbroken-test"
 path = "src/bin/atsisbroken-test.rs"
 required-features = ["tests"]
+# Runner, not test target. atsisbroken-test spawns `cargo test`
+# three times and compares blake3 hashes; it has no `#[test]`
+# functions inside it. Skip the harness for it too.
+test = false
 
 [features]
 default = ["tui", "gui"]

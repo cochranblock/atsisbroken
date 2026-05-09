@@ -191,13 +191,11 @@ enum Cmd {
     Status,
 }
 
+/// clap value-parser for `--mode`. Wraps [`Mode::from_cli_str`]
+/// (lib-tested) and adapts its `Option<Mode>` to the
+/// `Result<_, String>` shape clap expects from a value parser.
 fn parse_mode(s: &str) -> Result<Mode, String> {
-    match s {
-        "training-wheels" | "training_wheels" | "training" => Ok(Mode::TrainingWheels),
-        "shadow" => Ok(Mode::Shadow),
-        "chaos" => Ok(Mode::Chaos),
-        other => Err(format!("unknown mode: {other}")),
-    }
+    Mode::from_cli_str(s).ok_or_else(|| format!("unknown mode: {s}"))
 }
 
 // Sync main. Async-needing commands (chromiumoxide, async reqwest)
@@ -400,23 +398,11 @@ async fn run_cdp_url(profile: &Profile, url: &str) -> Result<()> {
     Ok(())
 }
 
+/// Wrap the lib's [`Strategy::from_cli_str`] in anyhow::Error
+/// for the main fn's Result. Lib returns String (no anyhow dep);
+/// callers want anyhow::Error so they can `?` cleanly.
 fn parse_strategy_override(s: &str) -> Result<Strategy> {
-    match s {
-        "cdp-attach" => strategy::probe_cdp_endpoint()
-            .map(|endpoint| Strategy::CdpAttach { endpoint })
-            .ok_or_else(|| anyhow!("no Chromium debug port reachable")),
-        "cdp-launch" => strategy::find_chromium_binary()
-            .map(|browser_path| Strategy::CdpLaunch { browser_path })
-            .ok_or_else(|| anyhow!("no Chromium-family browser found in PATH")),
-        "extension" => Ok(Strategy::Extension),
-        "userscript" => Ok(Strategy::Userscript),
-        "bookmarklet" => Ok(Strategy::Bookmarklet),
-        "clipboard" => strategy::detect_clipboard_tool()
-            .map(|tool| Strategy::Clipboard { tool })
-            .ok_or_else(|| anyhow!("no clipboard tool found (pbcopy/xclip/wl-copy/clip.exe)")),
-        "speak" => Ok(Strategy::Speak),
-        other => Err(anyhow!("unknown strategy: {other}")),
-    }
+    Strategy::from_cli_str(s).map_err(|e| anyhow!(e))
 }
 
 async fn run_cdp_attach(endpoint: &str) -> Result<()> {
@@ -504,99 +490,11 @@ async fn cmd_cdp_probe() -> Result<()> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use atsisbroken::strategy::ClipboardTool;
-
-    // ─── parse_mode ────────────────────────────────────────────────────────
-
-    #[test]
-    fn parse_mode_accepts_canonical_spellings() {
-        assert_eq!(parse_mode("training-wheels").unwrap(), Mode::TrainingWheels);
-        assert_eq!(parse_mode("training_wheels").unwrap(), Mode::TrainingWheels);
-        assert_eq!(parse_mode("training").unwrap(), Mode::TrainingWheels);
-        assert_eq!(parse_mode("shadow").unwrap(), Mode::Shadow);
-        assert_eq!(parse_mode("chaos").unwrap(), Mode::Chaos);
-    }
-
-    #[test]
-    fn parse_mode_error_message_includes_input() {
-        let err = parse_mode("BANANA").unwrap_err();
-        assert!(err.contains("BANANA"), "error must surface the bad input");
-    }
-
-    #[test]
-    fn parse_mode_rejects_known_typos() {
-        assert!(parse_mode("Chaos").is_err()); // case-sensitive
-        assert!(parse_mode("shadows").is_err());
-        assert!(parse_mode("").is_err());
-    }
-
-    // ─── parse_strategy_override ──────────────────────────────────────────
-
-    #[test]
-    fn parse_strategy_override_userscript_branch() {
-        let s = parse_strategy_override("userscript").unwrap();
-        assert_eq!(s, Strategy::Userscript);
-    }
-
-    #[test]
-    fn parse_strategy_override_bookmarklet_branch() {
-        let s = parse_strategy_override("bookmarklet").unwrap();
-        assert_eq!(s, Strategy::Bookmarklet);
-    }
-
-    #[test]
-    fn parse_strategy_override_extension_branch() {
-        let s = parse_strategy_override("extension").unwrap();
-        assert_eq!(s, Strategy::Extension);
-    }
-
-    #[test]
-    fn parse_strategy_override_speak_branch() {
-        let s = parse_strategy_override("speak").unwrap();
-        assert_eq!(s, Strategy::Speak);
-    }
-
-    #[test]
-    fn parse_strategy_override_unknown_returns_err() {
-        let err = parse_strategy_override("yolo").unwrap_err();
-        assert!(err.to_string().contains("unknown"));
-    }
-
-    #[test]
-    fn parse_strategy_override_empty_returns_err() {
-        assert!(parse_strategy_override("").is_err());
-    }
-
-    #[test]
-    fn parse_strategy_override_clipboard_returns_err_without_tool() {
-        // CI often has no clipboard tool; the override path must surface
-        // a clear error rather than silently picking one.
-        // We can't reliably stub `which`, so this just exercises the
-        // Result path — passes if either Ok or Err, and we assert that
-        // when Ok it's a Clipboard variant.
-        if let Ok(s) = parse_strategy_override("clipboard") {
-            assert!(matches!(s, Strategy::Clipboard { .. }));
-        }
-    }
-
-    #[test]
-    fn clipboard_tool_args_pass_to_command_correctly() {
-        // Command construction is hard to mock, but we can at least
-        // confirm the args list each tool yields is consistent with
-        // its binary name (no "pbcopy" with -selection flag, etc.).
-        for (tool, args) in [
-            (ClipboardTool::Pbcopy, vec![]),
-            (ClipboardTool::Xclip, vec!["-selection", "clipboard"]),
-            (ClipboardTool::Wlcopy, vec![]),
-            (ClipboardTool::ClipExe, vec![]),
-        ] {
-            assert_eq!(tool.args(), args);
-        }
-    }
-}
+// No `#[cfg(test)] mod tests` here. main.rs is the production
+// binary's entry point; tests live in the lib (Mode::from_cli_str,
+// Strategy::from_cli_str, ClipboardTool::args) and in
+// tests/cli_smoke.rs (end-to-end CLI behavior). The TRIPLE SIMS
+// gate runner is the second declared bin, src/bin/atsisbroken-test.rs.
 
 fn cmd_graduate(yes: bool, back: bool) -> Result<()> {
     use atsisbroken::config::Config;

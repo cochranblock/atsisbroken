@@ -67,6 +67,39 @@ impl ClipboardTool {
     }
 }
 
+impl Strategy {
+    /// Resolve a CLI `--strategy <s>` override into a concrete
+    /// [`Strategy`]. Pure logic for the flag-match; the tier-
+    /// detection branches (CDP probe, chromium-binary lookup,
+    /// clipboard-tool detection) are environment-dependent and
+    /// return Err when the requested strategy isn't reachable.
+    ///
+    /// Error type is `String` rather than `anyhow::Error` so this
+    /// function stays in the lib (anyhow is a binary-side dep
+    /// only). main.rs's CLI parser converts to anyhow::Error at
+    /// the call site.
+    pub fn from_cli_str(s: &str) -> Result<Strategy, String> {
+        match s {
+            "cdp-attach" => probe_cdp_endpoint()
+                .map(|endpoint| Strategy::CdpAttach { endpoint })
+                .ok_or_else(|| "no Chromium debug port reachable".to_string()),
+            "cdp-launch" => find_chromium_binary()
+                .map(|browser_path| Strategy::CdpLaunch { browser_path })
+                .ok_or_else(|| "no Chromium-family browser found in PATH".to_string()),
+            "extension" => Ok(Strategy::Extension),
+            "userscript" => Ok(Strategy::Userscript),
+            "bookmarklet" => Ok(Strategy::Bookmarklet),
+            "clipboard" => detect_clipboard_tool()
+                .map(|tool| Strategy::Clipboard { tool })
+                .ok_or_else(|| {
+                    "no clipboard tool found (pbcopy/xclip/wl-copy/clip.exe)".to_string()
+                }),
+            "speak" => Ok(Strategy::Speak),
+            other => Err(format!("unknown strategy: {other}")),
+        }
+    }
+}
+
 /// Detect the highest-tier strategy this environment supports.
 ///
 /// Pure inspection of: env vars, the filesystem, and `which`-style PATH
@@ -347,6 +380,66 @@ mod tests {
     fn detect_always_returns_a_strategy() {
         // Even on a totally empty environment, Speak is the floor.
         let _ = detect();
+    }
+
+    // ─── Strategy::from_cli_str — pure CLI flag parsing ────────────
+
+    #[test]
+    fn from_cli_str_userscript_branch() {
+        assert_eq!(Strategy::from_cli_str("userscript").unwrap(), Strategy::Userscript);
+    }
+
+    #[test]
+    fn from_cli_str_bookmarklet_branch() {
+        assert_eq!(Strategy::from_cli_str("bookmarklet").unwrap(), Strategy::Bookmarklet);
+    }
+
+    #[test]
+    fn from_cli_str_extension_branch() {
+        assert_eq!(Strategy::from_cli_str("extension").unwrap(), Strategy::Extension);
+    }
+
+    #[test]
+    fn from_cli_str_speak_branch() {
+        assert_eq!(Strategy::from_cli_str("speak").unwrap(), Strategy::Speak);
+    }
+
+    #[test]
+    fn from_cli_str_unknown_returns_err() {
+        let err = Strategy::from_cli_str("yolo").unwrap_err();
+        assert!(err.contains("unknown"));
+    }
+
+    #[test]
+    fn from_cli_str_empty_returns_err() {
+        assert!(Strategy::from_cli_str("").is_err());
+    }
+
+    #[test]
+    fn from_cli_str_clipboard_returns_err_without_tool() {
+        // CI often has no clipboard tool; the override path must
+        // surface a clear error rather than silently picking one.
+        // We can't reliably stub `which`, so this only exercises the
+        // Result path — passes if either Ok (with the Clipboard
+        // variant) or Err.
+        if let Ok(s) = Strategy::from_cli_str("clipboard") {
+            assert!(matches!(s, Strategy::Clipboard { .. }));
+        }
+    }
+
+    #[test]
+    fn clipboard_tool_args_pass_to_command_correctly() {
+        // Command construction is hard to mock, but we can at least
+        // confirm the args list each tool yields is consistent with
+        // its binary name (no "pbcopy" with -selection flag, etc.).
+        for (tool, args) in [
+            (ClipboardTool::Pbcopy, vec![]),
+            (ClipboardTool::Xclip, vec!["-selection", "clipboard"]),
+            (ClipboardTool::Wlcopy, vec![]),
+            (ClipboardTool::ClipExe, vec![]),
+        ] {
+            assert_eq!(tool.args(), args);
+        }
     }
 
     #[test]
