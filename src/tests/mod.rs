@@ -64,7 +64,9 @@ pub mod internal;
 pub mod learning;
 pub mod paths;
 pub mod products;
+pub mod resume;
 pub mod shell;
+pub mod strategy;
 pub mod text;
 pub mod window;
 
@@ -210,7 +212,9 @@ pub fn run_all() -> Vec<TestResult> {
     all.extend(learning::run());
     all.extend(paths::run());
     all.extend(products::run());
+    all.extend(resume::run());
     all.extend(shell::run());
+    all.extend(strategy::run());
     all.extend(text::run());
     all.extend(window::run());
     all
