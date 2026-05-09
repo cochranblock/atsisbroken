@@ -14,61 +14,99 @@
 use serde::{Deserialize, Serialize};
 
 /// Identifier for the source of a Product. Adding a connector =
-/// adding a variant here. The variant is what the on-disk
-/// ProductGraph stores; renaming a variant breaks existing user
-/// graphs, so additions are append-only.
+/// adding a variant here. The variant's serde name is what the
+/// on-disk ProductGraph stores; renaming a serde name breaks
+/// existing user graphs, so additions are append-only.
+///
+/// Per-variant `#[serde(rename = "...")]` is deliberate and
+/// load-bearing. Don't fall back to `rename_all` — `snake_case`
+/// splits camelcase variants on case boundaries and produces
+/// `"git_hub"`, `"npm_registry"`, `"orc_id"` (Rust audit, bug #2).
+/// Each variant pins the canonical wire name explicitly.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[serde(rename_all = "snake_case")]
 pub enum ConnectorKind {
     /// Github.com — repos, READMEs, commits, languages.
+    #[serde(rename = "github")]
     GitHub,
-    /// Forge alternatives, same shape as GitHub.
+    #[serde(rename = "gitlab")]
     GitLab,
+    #[serde(rename = "bitbucket")]
     Bitbucket,
+    #[serde(rename = "codeberg")]
     Codeberg,
+    #[serde(rename = "sourcehut")]
     Sourcehut,
     /// Personal blog via RSS / Atom / sitemap.
+    #[serde(rename = "personal_blog")]
     PersonalBlog,
+    #[serde(rename = "substack")]
     Substack,
+    #[serde(rename = "medium")]
     Medium,
+    #[serde(rename = "devto")]
     DevTo,
+    #[serde(rename = "hashnode")]
     Hashnode,
     /// Q&A history.
+    #[serde(rename = "stackoverflow")]
     StackOverflow,
     /// HN comments + submissions.
+    #[serde(rename = "hackernews")]
     HackerNews,
+    #[serde(rename = "reddit")]
     Reddit,
     /// Microblog identities.
+    #[serde(rename = "bluesky")]
     Bluesky,
+    #[serde(rename = "mastodon")]
     Mastodon,
+    #[serde(rename = "twitter")]
     Twitter,
     /// Published software packages.
+    #[serde(rename = "npm")]
     NpmRegistry,
+    #[serde(rename = "cratesio")]
     CratesIo,
+    #[serde(rename = "pypi")]
     PyPI,
+    #[serde(rename = "rubygems")]
     RubyGems,
+    #[serde(rename = "dockerhub")]
     DockerHub,
     /// Patents + papers.
+    #[serde(rename = "uspto")]
     USPTO,
+    #[serde(rename = "arxiv")]
     ArXiv,
+    #[serde(rename = "google_scholar")]
     GoogleScholar,
+    #[serde(rename = "orcid")]
     OrcID,
     /// Video / audio / talks.
+    #[serde(rename = "youtube")]
     YouTube,
+    #[serde(rename = "twitch")]
     Twitch,
     /// Design portfolios.
+    #[serde(rename = "behance")]
     Behance,
+    #[serde(rename = "dribbble")]
     Dribbble,
+    #[serde(rename = "artstation")]
     ArtStation,
     /// OAuth-bound services.
+    #[serde(rename = "linkedin")]
     LinkedIn,
     /// Federal applicants.
+    #[serde(rename = "usajobs")]
     USAJOBS,
     /// User-pasted content. Last resort for sources without
     /// integrations; the user attests authorship.
+    #[serde(rename = "manual_paste")]
     ManualPaste,
     /// The legacy resume-parser-derived Profile, treated as a
     /// connector so it composes uniformly with the others.
+    #[serde(rename = "manual_resume")]
     ManualResume,
 }
 
@@ -233,17 +271,42 @@ mod tests {
     }
 
     #[test]
-    fn snake_case_serialization() {
-        // Wire format: variant names are snake_case so future
-        // contributors don't accidentally write "GitHub" as a
-        // string and break existing graphs.
-        assert_eq!(
-            serde_json::to_string(&ConnectorKind::GitHub).unwrap(),
-            "\"git_hub\""
-        );
-        assert_eq!(
-            serde_json::to_string(&ConnectorKind::PersonalBlog).unwrap(),
-            "\"personal_blog\""
-        );
+    fn canonical_serialization() {
+        // Wire format: every variant has a per-variant
+        // #[serde(rename = "...")] pinning the canonical name.
+        // Previous version used #[serde(rename_all = "snake_case")]
+        // which mangled `GitHub` → `"git_hub"`, `NpmRegistry` →
+        // `"npm_registry"`, etc. (Rust audit bug #2). This test
+        // pins the corrected names so the bug can't recur.
+        let cases: &[(ConnectorKind, &str)] = &[
+            (ConnectorKind::GitHub, "github"),
+            (ConnectorKind::GitLab, "gitlab"),
+            (ConnectorKind::PersonalBlog, "personal_blog"),
+            (ConnectorKind::DevTo, "devto"),
+            (ConnectorKind::StackOverflow, "stackoverflow"),
+            (ConnectorKind::HackerNews, "hackernews"),
+            (ConnectorKind::NpmRegistry, "npm"),
+            (ConnectorKind::CratesIo, "cratesio"),
+            (ConnectorKind::PyPI, "pypi"),
+            (ConnectorKind::DockerHub, "dockerhub"),
+            (ConnectorKind::USPTO, "uspto"),
+            (ConnectorKind::ArXiv, "arxiv"),
+            (ConnectorKind::GoogleScholar, "google_scholar"),
+            (ConnectorKind::OrcID, "orcid"),
+            (ConnectorKind::YouTube, "youtube"),
+            (ConnectorKind::ArtStation, "artstation"),
+            (ConnectorKind::LinkedIn, "linkedin"),
+            (ConnectorKind::USAJOBS, "usajobs"),
+            (ConnectorKind::ManualPaste, "manual_paste"),
+            (ConnectorKind::ManualResume, "manual_resume"),
+        ];
+        for (variant, want) in cases {
+            let got = serde_json::to_string(variant).unwrap();
+            let want_quoted = format!("\"{want}\"");
+            assert_eq!(
+                got, want_quoted,
+                "{variant:?} should serialize to {want_quoted}, got {got}"
+            );
+        }
     }
 }
