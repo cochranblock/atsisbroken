@@ -8,6 +8,7 @@
 
 use std::sync::Arc;
 
+use glyphon::FontSystem;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -86,6 +87,14 @@ struct App {
     engine: Box<dyn Engine>,
     #[allow(dead_code)] // wired in when input layer lands
     timing: InputTiming,
+    /// Pre-built FontSystem. Built in App::new (which runs before
+    /// the event loop starts), then moved into WindowState on
+    /// `resumed`. Building inside `resumed` would freeze winit's
+    /// event handler for ~100-300ms on machines with many fonts
+    /// (Rust audit bug #6). Option so we can `take()` the value
+    /// when handing it off; should never be None after the first
+    /// resumed runs.
+    font_system: Option<FontSystem>,
     /// Captured if window init fails inside `resumed`. winit's
     /// ApplicationHandler is fire-and-forget; we need a side-
     /// channel to surface mid-event-loop errors to `run()`.
@@ -96,11 +105,21 @@ impl App {
     fn new(config: BrowserConfig) -> Result<Self, BrowserError> {
         let timing = InputTiming::new(config.input.clone());
         let engine: Box<dyn Engine> = Box::new(StaticHtmlEngine::new()?);
+        // Build FontSystem here, BEFORE the event loop runs.
+        // FontSystem::new() invokes fontdb::Database::load_system_fonts
+        // which scans /usr/share/fonts (Linux), /System/Library/Fonts
+        // (macOS), or %WINDIR%/Fonts (Windows). On dev machines with
+        // many fonts this takes ~100-300ms. Doing it here means the
+        // user's window opens INSTANTLY when resumed fires; doing it
+        // inside resumed would freeze the OS event loop during the
+        // scan.
+        let font_system = FontSystem::new();
         Ok(Self {
             config,
             state: None,
             engine,
             timing,
+            font_system: Some(font_system),
             startup_error: None,
         })
     }
@@ -113,7 +132,19 @@ impl ApplicationHandler for App {
             // suspend (Android). We've already initialized; no-op.
             return;
         }
-        match WindowState::new(event_loop, &self.config.title) {
+        // Move the pre-built FontSystem into WindowState. Should
+        // always be Some here — App::new builds it before the
+        // event loop starts. None would mean a previous resumed
+        // already consumed it; that path is guarded by the
+        // is_some() check above.
+        let Some(font_system) = self.font_system.take() else {
+            self.startup_error = Some(BrowserError::Other(anyhow::anyhow!(
+                "font_system already consumed — duplicate resumed event?"
+            )));
+            event_loop.exit();
+            return;
+        };
+        match WindowState::new(event_loop, &self.config.title, font_system) {
             Ok(mut state) => {
                 let url_str = self.config.start_url.to_string();
                 let (title, body) = match self.engine.navigate(&self.config.start_url) {

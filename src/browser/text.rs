@@ -71,12 +71,19 @@ pub struct TextLayer {
 }
 
 impl TextLayer {
+    /// Construct the text layer with a pre-built FontSystem.
+    /// FontSystem::new() runs a disk scan over the OS font dirs;
+    /// previous code called it inside this constructor (and thus
+    /// inside winit's `resumed` event handler), which froze the
+    /// event loop for hundreds of ms on machines with many fonts
+    /// (Rust audit bug #6). The caller now builds the FontSystem
+    /// before the event loop starts and hands ownership in here.
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         surface_format: wgpu::TextureFormat,
+        mut font_system: FontSystem,
     ) -> Self {
-        let mut font_system = FontSystem::new();
         let swash_cache = SwashCache::new();
         let cache = Cache::new(device);
         let viewport = Viewport::new(device, &cache);

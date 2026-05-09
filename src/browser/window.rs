@@ -16,6 +16,8 @@ use winit::dpi::LogicalSize;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes};
 
+use glyphon::FontSystem;
+
 use super::text::{page_runs, TextLayer, TextRun};
 
 /// Per-window state the shell maintains.
@@ -39,7 +41,17 @@ impl WindowState {
     /// Construct the window, request a wgpu surface, and pick an
     /// adapter. Synchronous via `pollster`; this is one-time
     /// startup work.
-    pub fn new(event_loop: &ActiveEventLoop, title: &str) -> anyhow::Result<Self> {
+    ///
+    /// `font_system` is built by the caller (App::new) before the
+    /// event loop starts, NOT inside this constructor. Building
+    /// it here would freeze the winit `resumed` event handler for
+    /// hundreds of ms while it scans system font directories
+    /// (Rust audit bug #6). The caller hands ownership in.
+    pub fn new(
+        event_loop: &ActiveEventLoop,
+        title: &str,
+        font_system: FontSystem,
+    ) -> anyhow::Result<Self> {
         let attributes = WindowAttributes::default()
             .with_title(title)
             .with_inner_size(LogicalSize::new(1280.0, 800.0));
@@ -93,7 +105,7 @@ impl WindowState {
         };
         surface.configure(&device, &config);
 
-        let mut text = TextLayer::new(&device, &queue, surface_format);
+        let mut text = TextLayer::new(&device, &queue, surface_format, font_system);
         text.resize(&queue, size.width.max(1), size.height.max(1));
 
         Ok(Self {
