@@ -348,7 +348,7 @@ async fn cmd_run(
     }
 
     let chosen = match forced.as_deref() {
-        Some(s) => parse_strategy_override(s, &profile)?,
+        Some(s) => parse_strategy_override(s)?,
         None => strategy::detect(),
     };
     eprintln!("atsisbroken {} — strategy: {:?}", version(), chosen);
@@ -400,7 +400,7 @@ async fn run_cdp_url(profile: &Profile, url: &str) -> Result<()> {
     Ok(())
 }
 
-fn parse_strategy_override(s: &str, profile: &Profile) -> Result<Strategy> {
+fn parse_strategy_override(s: &str) -> Result<Strategy> {
     match s {
         "cdp-attach" => strategy::probe_cdp_endpoint()
             .map(|endpoint| Strategy::CdpAttach { endpoint })
@@ -417,12 +417,6 @@ fn parse_strategy_override(s: &str, profile: &Profile) -> Result<Strategy> {
         "speak" => Ok(Strategy::Speak),
         other => Err(anyhow!("unknown strategy: {other}")),
     }
-    .map(|st| {
-        // Touch the profile to silence unused warning for branches that don't
-        // need it; future strategies may consult it.
-        let _ = profile;
-        st
-    })
 }
 
 async fn run_cdp_attach(endpoint: &str) -> Result<()> {
@@ -515,10 +509,6 @@ mod tests {
     use super::*;
     use atsisbroken::strategy::ClipboardTool;
 
-    fn empty_profile() -> Profile {
-        Profile::default()
-    }
-
     // ─── parse_mode ────────────────────────────────────────────────────────
 
     #[test]
@@ -547,43 +537,37 @@ mod tests {
 
     #[test]
     fn parse_strategy_override_userscript_branch() {
-        let p = empty_profile();
-        let s = parse_strategy_override("userscript", &p).unwrap();
+        let s = parse_strategy_override("userscript").unwrap();
         assert_eq!(s, Strategy::Userscript);
     }
 
     #[test]
     fn parse_strategy_override_bookmarklet_branch() {
-        let p = empty_profile();
-        let s = parse_strategy_override("bookmarklet", &p).unwrap();
+        let s = parse_strategy_override("bookmarklet").unwrap();
         assert_eq!(s, Strategy::Bookmarklet);
     }
 
     #[test]
     fn parse_strategy_override_extension_branch() {
-        let p = empty_profile();
-        let s = parse_strategy_override("extension", &p).unwrap();
+        let s = parse_strategy_override("extension").unwrap();
         assert_eq!(s, Strategy::Extension);
     }
 
     #[test]
     fn parse_strategy_override_speak_branch() {
-        let p = empty_profile();
-        let s = parse_strategy_override("speak", &p).unwrap();
+        let s = parse_strategy_override("speak").unwrap();
         assert_eq!(s, Strategy::Speak);
     }
 
     #[test]
     fn parse_strategy_override_unknown_returns_err() {
-        let p = empty_profile();
-        let err = parse_strategy_override("yolo", &p).unwrap_err();
+        let err = parse_strategy_override("yolo").unwrap_err();
         assert!(err.to_string().contains("unknown"));
     }
 
     #[test]
     fn parse_strategy_override_empty_returns_err() {
-        let p = empty_profile();
-        assert!(parse_strategy_override("", &p).is_err());
+        assert!(parse_strategy_override("").is_err());
     }
 
     #[test]
@@ -593,8 +577,7 @@ mod tests {
         // We can't reliably stub `which`, so this just exercises the
         // Result path — passes if either Ok or Err, and we assert that
         // when Ok it's a Clipboard variant.
-        let p = empty_profile();
-        if let Ok(s) = parse_strategy_override("clipboard", &p) {
+        if let Ok(s) = parse_strategy_override("clipboard") {
             assert!(matches!(s, Strategy::Clipboard { .. }));
         }
     }
