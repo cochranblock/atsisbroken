@@ -53,10 +53,13 @@
 
 use std::time::Instant;
 
+pub mod cdp;
+pub mod config;
 pub mod connector;
 pub mod fingerprint;
 pub mod input;
 pub mod internal;
+pub mod paths;
 pub mod products;
 pub mod shell;
 pub mod text;
@@ -193,10 +196,13 @@ pub fn case(name: &str, body: impl FnOnce() -> Result<(), String>) -> TestResult
 /// with it (print, hash, exit).
 pub fn run_all() -> Vec<TestResult> {
     let mut all = Vec::new();
+    all.extend(cdp::run());
+    all.extend(config::run());
     all.extend(connector::run());
     all.extend(fingerprint::run());
     all.extend(input::run());
     all.extend(internal::run());
+    all.extend(paths::run());
     all.extend(products::run());
     all.extend(shell::run());
     all.extend(text::run());
