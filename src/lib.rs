@@ -25,6 +25,8 @@
 use serde::{Deserialize, Serialize};
 
 pub mod bridge;
+#[cfg(feature = "browser")]
+pub mod browser;
 pub mod browser_detect;
 pub mod cdp;
 pub mod config;

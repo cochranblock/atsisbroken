@@ -1,12 +1,14 @@
 # Unlicense — public domain — cochranblock.org
-# atsisbroken — ATS is broken. Browser autopilot via CDP. Personal model built
-# on demand from the user's own inputs. No open-source models. No cloud. No
-# baked third-party weights. No premium tier. Forever.
-# Stack: seed corpus shipped in-tree → on-device trainer (logistic regression
-# over hand-engineered features) → ~/.atsisbroken/{profile.toml, model.json} →
-# kova-engine inference loader → chromiumoxide CDP → exopack TRIPLE SIMS gate.
-# Architecture: single Rust binary, cross-compiled. Diamond-edge keeps the
-# ship small. The user's model is the only model.
+# atsisbroken — the browser for filling job applications. Single Rust binary,
+# Servo-derived engine, no Chrome dependency, no extension. The browser IS
+# the product. Per-character human-like input, per-domain anti-fingerprint
+# controls, audit-passable verbatim-source free-form composition.
+# Stack: html5ever + stylo + WebRender + SpiderMonkey (via Servo) for the
+# engine; winit + wgpu for window + render surface; reqwest + rustls for
+# network; the existing classifier + Profile + GitHub source + correction
+# overlay live unchanged inside the browser as the "brain."
+# Architecture: single Rust binary, single crate, cross-compiled. The user's
+# model is the only model.
 # Contributors: GotEmCoach, KOVA, Claude Opus 4.7
 
 [workspace]
@@ -42,10 +44,23 @@ name = "atsisbroken"
 path = "src/main.rs"
 
 [features]
-default = ["tui"]
+default = ["tui", "browser"]
 # Optional terminal UI. ratatui + crossterm (~250 KB compiled). Drop with
 # `--no-default-features` for the leanest cross-compiled releases.
 tui = ["dep:ratatui", "dep:crossterm"]
+# The browser shell. Window via winit, render surface via wgpu, HTML/CSS/JS
+# engine wired in below. This is the product surface; everything else is
+# either "brain" (classifier / Profile / sources) or legacy automation
+# fallbacks (CDP / extension).
+browser = [
+    "dep:winit",
+    "dep:wgpu",
+    "dep:raw-window-handle",
+    "dep:pollster",
+    "dep:bytemuck",
+    "dep:html5ever",
+    "dep:markup5ever_rcdom",
+]
 
 [dependencies]
 # The Cochran Block, LLC crates (paths; swap to crates.io or git when published).
@@ -69,13 +84,26 @@ thiserror      = "2"
 # dep is "free" in binary size — we just declare the features
 # atsisbroken's code relies on. rustls-tls reuses the rustls already
 # in the dep graph for tokio-tungstenite (no native-tls / OpenSSL).
-reqwest        = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest        = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 # Base64 decoder for GitHub's /repos/{owner}/{repo}/readme response
 # (content is base64-encoded). Already transitively present.
 base64         = "0.22"
 # TUI deps — versions pinned to match kova's TUI feature for workspace parity.
 ratatui        = { version = "0.29", optional = true }
 crossterm      = { version = "0.28", optional = true }
+# Browser shell deps. The window + render surface stack is winit + wgpu;
+# this is the same stack Servo's WebRender uses internally and what every
+# Rust-native UI framework (egui, iced, dioxus-blitz) standardizes on.
+# We start with html5ever for HTML parsing and markup5ever_rcdom for the
+# Servo-style DOM representation — same crates Servo uses, so when we
+# wire in stylo + spidermonkey-via-mozjs the DOM hand-off is direct.
+winit              = { version = "0.30", optional = true }
+wgpu               = { version = "23", optional = true, default-features = false, features = ["wgsl", "metal", "dx12"] }
+raw-window-handle  = { version = "0.6", optional = true }
+pollster           = { version = "0.4", optional = true }
+bytemuck           = { version = "1", optional = true, features = ["derive"] }
+html5ever          = { version = "0.29", optional = true }
+markup5ever_rcdom  = { version = "0.5.0-unofficial", optional = true }
 
 
 

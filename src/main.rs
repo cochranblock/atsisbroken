@@ -162,6 +162,18 @@ enum Cmd {
         #[arg(long)]
         handle: Option<String>,
     },
+    /// Open the atsisbroken browser. Single-window, Servo-derived
+    /// engine (when the engine layer lands). Optionally navigates
+    /// to URL on launch. The browser IS the product surface;
+    /// this subcommand is the equivalent of double-clicking the
+    /// app icon. Future: become the default behavior of running
+    /// `atsisbroken` with no subcommand, retiring the TUI.
+    #[cfg(feature = "browser")]
+    Browse {
+        /// URL to open on launch. Defaults to atsisbroken://home.
+        #[arg(long)]
+        url: Option<String>,
+    },
     /// Print the current configuration.
     Status,
 }
@@ -196,10 +208,25 @@ async fn main() -> Result<()> {
         Some(Cmd::Feedback) => cmd_feedback().await,
         Some(Cmd::ConnectGithub { handle, token }) => cmd_connect_github(handle, token).await,
         Some(Cmd::SyncGithub { handle }) => cmd_sync_github(handle).await,
+        #[cfg(feature = "browser")]
+        Some(Cmd::Browse { url }) => cmd_browse(url),
         Some(Cmd::Status) => cmd_status(profile_override).await,
         Some(Cmd::Tui) => cmd_tui().await,
         Some(Cmd::TuiSnapshot { tab, width, height }) => cmd_tui_snapshot(tab, width, height).await,
     }
+}
+
+#[cfg(feature = "browser")]
+fn cmd_browse(url: Option<String>) -> Result<()> {
+    use atsisbroken::browser::{launch, BrowserConfig, Url};
+    let mut config = BrowserConfig::default();
+    if let Some(s) = url {
+        config.start_url = s
+            .parse::<Url>()
+            .map_err(|e| anyhow!("invalid --url {s:?}: {e}"))?;
+    }
+    launch(config).map_err(|e| anyhow!("browser: {e}"))?;
+    Ok(())
 }
 
 #[cfg(feature = "tui")]
