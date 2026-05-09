@@ -63,6 +63,7 @@ pub mod github;
 pub mod input;
 pub mod internal;
 pub mod learning;
+pub mod lib;
 pub mod paths;
 pub mod products;
 pub mod resume;
@@ -215,6 +216,7 @@ pub fn run_all() -> Vec<TestResult> {
     all.extend(input::run());
     all.extend(internal::run());
     all.extend(learning::run());
+    all.extend(lib::run());
     all.extend(paths::run());
     all.extend(products::run());
     all.extend(resume::run());
