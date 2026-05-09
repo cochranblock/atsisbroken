@@ -150,13 +150,21 @@ pub struct RepoSnapshot {
     /// in the answer-quality sense).
     #[serde(default)]
     pub is_fork: bool,
-    /// Verbatim sentences from README.md, capped at 2 KiB per repo.
-    /// The composer quotes from these directly with citation. No
-    /// paraphrasing; no model-generated text. Empty for repos with
-    /// no README or with README content over the cap (truncated).
+    /// Paragraph-shaped excerpts from README.md, capped at 2 KiB
+    /// per repo. Each excerpt is the contiguous block of non-blank
+    /// lines between blank-line boundaries, line-joined with a
+    /// single space — readable for citation prose like "the README
+    /// describes it as: «<excerpt>»" but NOT a byte-for-byte copy
+    /// of the README (interior newlines + indentation collapse to
+    /// single spaces). When the composer needs byte-precision
+    /// citations into the original README, [`extract_excerpts`]
+    /// will need to grow byte-offset metadata; today it doesn't.
+    /// Empty for repos with no README or with README content over
+    /// the cap (truncated).
     #[serde(default)]
     pub readme_excerpts: Vec<String>,
-    /// Recent commit messages, verbatim, capped at 50 entries.
+    /// Recent commit messages, byte-for-byte from the GitHub API
+    /// (no preprocessing on our end), capped at 50 entries.
     /// Used as evidence in technical-challenge answers.
     #[serde(default)]
     pub recent_commit_messages: Vec<String>,
@@ -338,11 +346,16 @@ pub fn parse_repos_array(json: &str) -> serde_json::Result<Vec<RepoApiResponse>>
     serde_json::from_str(json)
 }
 
-/// Decode a /repos/{owner}/{repo}/readme response and extract verbatim
-/// excerpts capped at `README_EXCERPT_CAP_BYTES`. The API returns
-/// `{"content": "<base64>", "encoding": "base64"}` with the README
-/// body. We base64-decode, then split into non-empty paragraphs and
-/// keep them in order until the byte cap is hit.
+/// Decode a /repos/{owner}/{repo}/readme response and extract
+/// paragraph-shaped excerpts capped at `README_EXCERPT_CAP_BYTES`.
+/// The API returns `{"content": "<base64>", "encoding": "base64"}`
+/// with the README body. We base64-decode, then split into
+/// non-empty paragraphs and keep them in order until the byte cap
+/// is hit. Within a paragraph, consecutive non-blank lines are
+/// joined with a single space — convenient for citation prose,
+/// but it does mean the excerpt is NOT a byte-for-byte slice of
+/// the original README. See [`extract_excerpts`] for the join
+/// behavior.
 ///
 /// Returns `Vec<String>` because the composer (Phase K) cites
 /// "the README describes it as: «<excerpt>»" and prefers
@@ -373,9 +386,17 @@ pub fn parse_readme_excerpts(json: &str) -> Result<Vec<String>, ReadmeParseError
 
 /// Split README text into paragraph-shaped excerpts up to byte cap.
 /// Paragraph = run of non-empty lines separated by a blank line.
-/// Each paragraph trimmed; we keep them in source order. Cap is
-/// enforced *after* including the next paragraph, so a single
-/// paragraph longer than the cap is included and we stop.
+/// Lines within a paragraph are joined with a single space (so a
+/// 3-line paragraph "alpha\nbeta\ngamma" becomes "alpha beta
+/// gamma"); we keep paragraphs in source order. Cap is enforced
+/// *after* including the next paragraph, so a single paragraph
+/// longer than the cap is included and we stop.
+///
+/// The excerpts are NOT byte-for-byte slices of `text` — interior
+/// newlines and indentation collapse to spaces. If a future
+/// caller needs byte-precision into the original README, this
+/// function needs to grow `(byte_offset, byte_length)` outputs
+/// alongside the joined string.
 fn extract_excerpts(text: &str, cap_bytes: usize) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut bytes_used: usize = 0;

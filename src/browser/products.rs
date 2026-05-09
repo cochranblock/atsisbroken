@@ -9,11 +9,12 @@
 //!
 //! This is the central data structure of the application. Every
 //! Product has a stable id, a public URL (so citations stay
-//! verifiable), an Excerpt set with byte offsets back into the
-//! stored text, and source metadata. The byte-offset invariant
-//! is what lets a future composer cite each emitted fragment
-//! back to its source range without re-fetching. Connectors and
-//! manual user edits are the only writers.
+//! verifiable), an Excerpt set capturing the substantive text the
+//! composer will quote from, and source metadata. The eventual
+//! citation invariant — every emitted token traces back to a
+//! public URL the user already wrote — is enforced by the
+//! composer (Phase K, not yet shipped). Connectors and manual
+//! user edits are the only writers.
 //!
 //! On-disk: `~/.atsisbroken/product_graph.json` — atomic write,
 //! same pattern as the GitHubInventory and FeedbackQueue.
@@ -126,17 +127,20 @@ impl Default for ProductKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Excerpt {
-    /// The text, byte-for-byte from the source. The composer
-    /// quotes this directly; downstream code that mutates it
-    /// (whitespace normalization, case folding, etc.) breaks the
-    /// audit chain and is forbidden.
+    /// The excerpt text. Today's producers sometimes preprocess
+    /// (e.g. README paragraph excerpts join consecutive non-blank
+    /// lines with a single space for readability); other producers
+    /// pass through bytes untouched (commit messages from GitHub).
+    /// See each producer's doc for which.
+    ///
+    /// The eventual citation invariant is: every emitted token
+    /// traces back to a public URL the user already wrote. The
+    /// in-flight byte-precision contract (offsets pointing into
+    /// the original source) was removed when it became clear no
+    /// current producer keeps offsets honest. It will land back
+    /// on this struct, alongside a producer that does, when the
+    /// composer ships and needs the precision.
     pub text: String,
-    /// Byte offset into the source body. Citation precision.
-    /// Sources without a meaningful body (a tweet, a package
-    /// title) use 0.
-    pub byte_offset: usize,
-    /// Byte length of the excerpt in the source.
-    pub byte_length: usize,
     /// Where in the source body this came from. Routing hint
     /// for the composer (a README intro is "this is the project's
     /// pitch"; a commit message is "this is the work"; a quote is
@@ -320,8 +324,6 @@ mod tests {
             updated: "2026-05-09T12:00:00Z".into(),
             excerpts: vec![Excerpt {
                 text: "ATS is broken.".into(),
-                byte_offset: 14,
-                byte_length: 14,
                 kind: ExcerptKind::Intro,
             }],
             topics: vec!["rust".into(), "ats".into()],
@@ -454,16 +456,17 @@ mod tests {
     }
 
     #[test]
-    fn excerpts_preserve_byte_offsets_through_round_trip() {
-        // Citation precision contract: byte_offset + byte_length
-        // must round-trip exactly so the composer's audit log
-        // can point back to the same span on the next sync.
+    fn excerpt_text_round_trips() {
+        // The byte-precision invariant (offset + length) was
+        // removed when no current producer kept offsets honest;
+        // see Excerpt's doc-comment. The remaining contract is
+        // that the excerpt text + its routing kind round-trip
+        // unchanged.
         let p = sample_product();
         let s = serde_json::to_string(&p).unwrap();
         let back: Product = serde_json::from_str(&s).unwrap();
-        assert_eq!(back.excerpts[0].byte_offset, 14);
-        assert_eq!(back.excerpts[0].byte_length, 14);
         assert_eq!(back.excerpts[0].text, "ATS is broken.");
+        assert_eq!(back.excerpts[0].kind, ExcerptKind::Intro);
     }
 
     #[test]
