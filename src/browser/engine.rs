@@ -145,14 +145,14 @@ impl StaticHtmlEngine {
     /// Walk the DOM and extract every form-field descriptor.
     /// Mirror of the JS classifier's `querySelectorAll('input,
     /// textarea, select')` step but in pure Rust.
-    fn extract_fields(dom: &RcDom) -> Vec<FieldDescriptor> {
+    pub(crate) fn extract_fields(dom: &RcDom) -> Vec<FieldDescriptor> {
         let mut out = Vec::new();
         walk_for_fields(&dom.document, &mut out);
         out
     }
 
     /// Walk the DOM looking for the `<title>` element's text.
-    fn extract_title(dom: &RcDom) -> String {
+    pub(crate) fn extract_title(dom: &RcDom) -> String {
         let mut found = String::new();
         walk_for_title(&dom.document, &mut found);
         found
@@ -277,7 +277,7 @@ impl Engine for StaticHtmlEngine {
     }
 }
 
-fn default_user_agent() -> String {
+pub(crate) fn default_user_agent() -> String {
     format!(
         "atsisbroken/{} (+https://github.com/cochranblock/atsisbroken)",
         env!("CARGO_PKG_VERSION")
@@ -285,7 +285,7 @@ fn default_user_agent() -> String {
 }
 
 /// Parse HTML bytes via html5ever into a Servo-style DOM tree.
-fn parse_html(html: &str) -> Result<RcDom, EngineError> {
+pub(crate) fn parse_html(html: &str) -> Result<RcDom, EngineError> {
     use html5ever::tendril::TendrilSink;
     let parser = html5ever::parse_document(RcDom::default(), Default::default());
     let dom = parser.one(html);
@@ -359,310 +359,3 @@ fn walk_for_title(handle: &Handle, found: &mut String) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_html_extracts_fields() {
-        let html = r#"
-<!DOCTYPE html>
-<html>
-<head><title>Apply</title></head>
-<body>
-<form>
-<input type="email" name="email" id="email-id" placeholder="you@example.com" aria-label="Email">
-<input type="tel" name="phone" id="phone-id">
-<textarea name="why" id="why-id" placeholder="Why this role?"></textarea>
-<select name="country" id="country-id">
-<option>USA</option>
-</select>
-</form>
-</body>
-</html>"#;
-        let dom = parse_html(html).unwrap();
-        assert_eq!(StaticHtmlEngine::extract_title(&dom), "Apply");
-        let fields = StaticHtmlEngine::extract_fields(&dom);
-        assert_eq!(fields.len(), 4);
-        let email = fields.iter().find(|f| f.name == "email").unwrap();
-        assert_eq!(email.kind, "email");
-        assert_eq!(email.placeholder, "you@example.com");
-        assert_eq!(email.aria_label, "Email");
-        let textarea = fields.iter().find(|f| f.name == "why").unwrap();
-        assert_eq!(textarea.kind, "textarea");
-        let select = fields.iter().find(|f| f.name == "country").unwrap();
-        assert_eq!(select.kind, "select");
-        let phone = fields.iter().find(|f| f.name == "phone").unwrap();
-        assert_eq!(phone.kind, "tel");
-    }
-
-    #[test]
-    fn snapshot_fields_before_navigate_errors_cleanly() {
-        let engine = StaticHtmlEngine::new().expect("build engine");
-        let r = engine.snapshot_fields();
-        assert!(r.is_err());
-    }
-
-    #[test]
-    fn fill_field_unimplemented_on_static_engine() {
-        let mut e = StaticHtmlEngine::new().unwrap();
-        let mut t = super::super::input::InputTiming::new(
-            super::super::input::HumanInputProfile::default(),
-        );
-        match e.fill_field("anything", "value", &mut t) {
-            Err(EngineError::Unimplemented(_)) => {}
-            other => panic!("expected Unimplemented, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn navigate_to_internal_url_renders_in_process() {
-        let mut e = StaticHtmlEngine::new().unwrap();
-        let url: Url = "atsisbroken://home".parse().unwrap();
-        let outcome = e.navigate(&url).expect("internal navigate must succeed");
-        assert_eq!(outcome.status, 0);
-        assert_eq!(outcome.content_type, "text/atsisbroken-internal");
-        assert_eq!(outcome.form_field_count, 0);
-        let snap = e.snapshot_fields().unwrap();
-        assert_eq!(snap.title, "atsisbroken");
-        assert!(!snap.body.is_empty());
-        assert!(snap.fields.is_empty());
-    }
-
-    #[test]
-    fn navigate_internal_unknown_returns_not_found_page() {
-        let mut e = StaticHtmlEngine::new().unwrap();
-        let url: Url = "atsisbroken://does-not-exist".parse().unwrap();
-        e.navigate(&url).expect("not-found page is still a valid render");
-        let snap = e.snapshot_fields().unwrap();
-        assert_eq!(snap.title, "Page not found");
-        assert!(snap.body.contains("atsisbroken://does-not-exist"));
-    }
-
-    // ─── Deeper engine flow tests ─────────────────────────────────────────
-
-    #[test]
-    fn engine_state_persists_across_repeated_internal_navigates() {
-        // Navigating between two internal pages should swap state
-        // cleanly — title from the new page, body from the new
-        // page, no leakage from the prior page.
-        let mut e = StaticHtmlEngine::new().unwrap();
-        e.navigate(&"atsisbroken://home".parse().unwrap()).unwrap();
-        let snap1 = e.snapshot_fields().unwrap();
-        assert_eq!(snap1.title, "atsisbroken");
-
-        e.navigate(&"atsisbroken://connections".parse().unwrap())
-            .unwrap();
-        let snap2 = e.snapshot_fields().unwrap();
-        assert!(snap2.title.contains("connections"));
-        // Body should be the connections-page body, not the home-
-        // page body.
-        assert!(snap2.body.contains("GitHub"));
-        assert!(!snap2.body.contains("atsisbroken: the browser"));
-    }
-
-    #[test]
-    fn engine_fields_are_empty_for_internal_pages() {
-        // Pin: internal pages have zero form fields. The
-        // composer + run loop should never try to fill an
-        // internal-page "form."
-        let mut e = StaticHtmlEngine::new().unwrap();
-        for host in ["home", "connections", "summary", "applications"] {
-            let url: Url = format!("atsisbroken://{host}").parse().unwrap();
-            e.navigate(&url).unwrap();
-            let snap = e.snapshot_fields().unwrap();
-            assert!(
-                snap.fields.is_empty(),
-                "internal page {host} produced form fields: {:?}",
-                snap.fields
-            );
-        }
-    }
-
-    #[test]
-    fn engine_navigate_outcome_internal_shape() {
-        // Pin the on-the-wire shape of NavigateOutcome for
-        // internal pages: status=0, content_type ends with our
-        // sentinel, form_field_count=0.
-        let mut e = StaticHtmlEngine::new().unwrap();
-        let url: Url = "atsisbroken://summary".parse().unwrap();
-        let outcome = e.navigate(&url).unwrap();
-        assert_eq!(outcome.status, 0);
-        assert_eq!(outcome.content_type, "text/atsisbroken-internal");
-        assert_eq!(outcome.form_field_count, 0);
-        assert_eq!(outcome.final_url, url);
-    }
-
-    #[test]
-    fn engine_html_extracts_kind_aria_label_id_name_placeholder() {
-        // Cover the full FieldDescriptor extraction surface.
-        // Catches HTML attribute parsing regressions in the
-        // html5ever DOM walker.
-        let html = r#"<!DOCTYPE html>
-<form>
-  <input type="email" name="contact-email" id="email-input"
-         placeholder="you@example.com" aria-label="Email address">
-  <textarea name="bio" id="bio-text" placeholder="Tell us"></textarea>
-  <select name="country" id="country-select">
-    <option>USA</option>
-  </select>
-</form>"#;
-        let dom = parse_html(html).unwrap();
-        let fields = StaticHtmlEngine::extract_fields(&dom);
-        assert_eq!(fields.len(), 3);
-
-        let email = fields.iter().find(|f| f.name == "contact-email").unwrap();
-        assert_eq!(email.kind, "email");
-        assert_eq!(email.id, "email-input");
-        assert_eq!(email.placeholder, "you@example.com");
-        assert_eq!(email.aria_label, "Email address");
-
-        let bio = fields.iter().find(|f| f.name == "bio").unwrap();
-        assert_eq!(bio.kind, "textarea");
-        assert_eq!(bio.id, "bio-text");
-        assert_eq!(bio.placeholder, "Tell us");
-
-        let country = fields.iter().find(|f| f.name == "country").unwrap();
-        assert_eq!(country.kind, "select");
-    }
-
-    #[test]
-    fn engine_input_kind_defaults_to_text_when_omitted() {
-        // <input> without type attribute → "text". Common in
-        // hand-written forms; broken behavior here would
-        // misclassify every default text input.
-        let html = r#"<input name="username" id="u">"#;
-        let dom = parse_html(html).unwrap();
-        let fields = StaticHtmlEngine::extract_fields(&dom);
-        assert_eq!(fields.len(), 1);
-        assert_eq!(fields[0].kind, "text");
-    }
-
-    #[test]
-    fn engine_skips_non_form_elements() {
-        // r##"..."## because the HTML contains "# (closing-quote
-        // followed by hash) inside the href attribute — that
-        // would terminate an r#"..."# raw string early.
-        let html = r##"<!DOCTYPE html>
-<html><body>
-<button>Click me</button>
-<a href="#">Link</a>
-<div><p>Not a form field</p></div>
-<input name="real-field" type="text">
-</body></html>"##;
-        let dom = parse_html(html).unwrap();
-        let fields = StaticHtmlEngine::extract_fields(&dom);
-        assert_eq!(fields.len(), 1);
-        assert_eq!(fields[0].name, "real-field");
-    }
-
-    #[test]
-    fn engine_handles_unicode_in_title() {
-        // The title extractor walks <title>'s text node. Verify
-        // it doesn't choke on non-ASCII (real ATS forms occasionally
-        // have international company names).
-        let html = "<!DOCTYPE html><title>café — application</title>";
-        let dom = parse_html(html).unwrap();
-        assert_eq!(StaticHtmlEngine::extract_title(&dom), "café — application");
-    }
-
-    #[test]
-    fn engine_title_empty_when_no_title_tag() {
-        let html = "<!DOCTYPE html><body>no title</body>";
-        let dom = parse_html(html).unwrap();
-        assert_eq!(StaticHtmlEngine::extract_title(&dom), "");
-    }
-
-    #[test]
-    fn engine_handles_malformed_html_without_panic() {
-        // html5ever is famously lenient; verify we never panic
-        // even on garbage input. Composer downstream depends on
-        // this — a vendor mid-deploy could serve broken HTML.
-        for bad_html in [
-            "",
-            "<<<<>>>",
-            "<input <input <input",
-            "<!-- never closing comment ",
-            r#"<input type="email" name="<script>alert(1)</script>">"#,
-        ] {
-            let r = parse_html(bad_html);
-            assert!(r.is_ok(), "panic-able HTML: {bad_html:?}");
-            let dom = r.unwrap();
-            // Whatever fields it extracts, the call should not panic.
-            let _ = StaticHtmlEngine::extract_fields(&dom);
-        }
-    }
-
-    // ─── Snapshot tests for internal pages ────────────────────────────────
-    //
-    // Each internal page's body is locked via `insta`. Adding or
-    // changing copy requires running `cargo insta accept`. Catches
-    // unintended copy regressions (e.g. a renamed URL slug
-    // breaking the documented connection target).
-
-    #[test]
-    fn snapshot_internal_page_home() {
-        let snap = inspect_for_test("atsisbroken://home");
-        insta::assert_snapshot!("internal_page_home", snap);
-    }
-
-    #[test]
-    fn snapshot_internal_page_connections() {
-        let snap = inspect_for_test("atsisbroken://connections");
-        insta::assert_snapshot!("internal_page_connections", snap);
-    }
-
-    #[test]
-    fn snapshot_internal_page_summary() {
-        let snap = inspect_for_test("atsisbroken://summary");
-        insta::assert_snapshot!("internal_page_summary", snap);
-    }
-
-    #[test]
-    fn snapshot_internal_page_fingerprint() {
-        let snap = inspect_for_test("atsisbroken://fingerprint");
-        insta::assert_snapshot!("internal_page_fingerprint", snap);
-    }
-
-    #[test]
-    fn snapshot_internal_page_shield() {
-        let snap = inspect_for_test("atsisbroken://shield");
-        insta::assert_snapshot!("internal_page_shield", snap);
-    }
-
-    #[test]
-    fn snapshot_internal_page_not_found() {
-        let snap = inspect_for_test("atsisbroken://no-such-page/with/path");
-        insta::assert_snapshot!("internal_page_not_found", snap);
-    }
-
-    fn inspect_for_test(url: &str) -> String {
-        let mut engine = StaticHtmlEngine::new().unwrap();
-        engine.navigate(&url.parse().unwrap()).unwrap();
-        let snap = engine.snapshot_fields().unwrap();
-        format!("URL: {}\nTitle: {}\n\n{}", snap.url, snap.title, snap.body)
-    }
-
-    #[test]
-    fn navigate_unsupported_scheme_errors() {
-        let mut e = StaticHtmlEngine::new().unwrap();
-        // Url's parser is permissive about the scheme — it accepts
-        // any "<scheme>://<host>..." string. The engine then
-        // rejects anything that isn't http(s) or atsisbroken://.
-        // So the construction goes through the parser (no struct
-        // literal: fields are private after audit-fix-#17), and
-        // the engine surfaces the unsupported-scheme error.
-        let url: Url = "ftp://example.com/x".parse().unwrap();
-        match e.navigate(&url) {
-            Err(EngineError::Network(_)) => {}
-            other => panic!("expected Network err, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn user_agent_includes_crate_version() {
-        let ua = default_user_agent();
-        assert!(ua.contains("atsisbroken/"));
-        assert!(ua.contains(env!("CARGO_PKG_VERSION")));
-    }
-}

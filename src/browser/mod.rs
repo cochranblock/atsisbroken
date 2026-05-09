@@ -50,7 +50,7 @@
 #![cfg(feature = "gui")]
 
 mod connector;
-mod engine;
+pub(crate) mod engine;
 // pub(crate) for the modules the tests tree (src/tests/) reaches
 // into directly. External callers still use the re-exports below;
 // pub(crate) just makes the module *path* visible inside the crate.

@@ -58,6 +58,7 @@ pub mod browser_detect;
 pub mod cdp;
 pub mod config;
 pub mod connector;
+pub mod engine;
 pub mod fingerprint;
 pub mod github;
 pub mod input;
@@ -159,6 +160,82 @@ pub fn check_eq<T: PartialEq + std::fmt::Debug>(
     }
 }
 
+/// Hand-rolled equivalent of `insta::assert_snapshot!`. Reads the
+/// fixture file at the documented path and compares the raw body
+/// (everything after the second `---` line of the YAML header) to
+/// `actual` — string-equality, no fancy diffing.
+///
+/// Format of the .snap file (matches `insta`'s text format):
+///
+/// ```text
+/// ---
+/// source: <path>
+/// expression: <expr>
+/// ---
+/// <body>
+/// ```
+///
+/// `name` is the bare snapshot name (e.g. `"internal_page_home"`);
+/// the file path is constructed as
+/// `<crate_root>/<dir>/atsisbroken__browser__engine__tests__<name>.snap`.
+/// `dir` lets a converted module point at its own snapshots
+/// directory; today only `src/browser/snapshots` exists.
+pub fn check_snapshot(dir: &str, name: &str, actual: &str) -> Result<(), String> {
+    let crate_root = env!("CARGO_MANIFEST_DIR");
+    let path = std::path::PathBuf::from(crate_root)
+        .join(dir)
+        .join(format!("atsisbroken__browser__engine__tests__{name}.snap"));
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    let body = strip_insta_header(&raw)
+        .ok_or_else(|| format!("malformed snapshot header in {}", path.display()))?;
+    if body == actual {
+        return Ok(());
+    }
+    let (line_no, exp_line, got_line) = first_diff_line(body, actual);
+    Err(format!(
+        "snapshot {name} differs at line {line_no}\n  expected: {exp_line:?}\n  got:      {got_line:?}\n  fixture:  {}",
+        path.display()
+    ))
+}
+
+/// Strip insta's YAML header (`---\n…\n---\n`) and return the body.
+/// Strips the trailing newline insta appends so `actual` (which
+/// typically doesn't end with `\n`) compares cleanly.
+/// Returns None if the header isn't well-formed.
+fn strip_insta_header(raw: &str) -> Option<&str> {
+    if !raw.starts_with("---\n") {
+        return None;
+    }
+    let after_first = &raw[4..];
+    let second = after_first.find("\n---\n")?;
+    let body_start = second + 5; // skip "\n---\n"
+    let body = &after_first[body_start..];
+    // insta writes a trailing `\n` to the file; the test's `actual`
+    // string typically doesn't carry that. Strip exactly one.
+    Some(body.strip_suffix('\n').unwrap_or(body))
+}
+
+/// Return (line_no, expected_line, got_line) for the first differing
+/// line between `expected` and `got`. line_no is 1-indexed.
+fn first_diff_line<'a>(expected: &'a str, got: &'a str) -> (usize, &'a str, &'a str) {
+    let mut e = expected.lines();
+    let mut g = got.lines();
+    let mut n = 1;
+    loop {
+        match (e.next(), g.next()) {
+            (Some(a), Some(b)) if a == b => {
+                n += 1;
+                continue;
+            }
+            (Some(a), Some(b)) => return (n, a, b),
+            (Some(a), None) => return (n, a, ""),
+            (None, Some(b)) => return (n, "", b),
+            (None, None) => return (n, "", ""),
+        }
+    }
+}
+
 /// Run one test by name. Catches panics so a single panicking
 /// test reports as FAIL and the rest of the suite continues.
 /// Times the body and returns a [`TestResult`].
@@ -211,6 +288,7 @@ pub fn run_all() -> Vec<TestResult> {
     all.extend(cdp::run());
     all.extend(config::run());
     all.extend(connector::run());
+    all.extend(engine::run());
     all.extend(fingerprint::run());
     all.extend(github::run());
     all.extend(input::run());
