@@ -7,11 +7,12 @@
 //! Everything else is private.
 
 use std::sync::Arc;
+use std::thread;
 
 use glyphon::FontSystem;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::window::WindowId;
 
 use super::engine::{Engine, EngineError, StaticHtmlEngine};
@@ -19,6 +20,27 @@ use super::fingerprint::{FingerprintOverrides, FingerprintProfile};
 use super::input::{HumanInputProfile, InputTiming};
 use super::url::Url;
 use super::window::WindowState;
+
+/// Worker → event-loop message. The winit event loop is the only
+/// place the WindowState lives, so off-thread navigations come
+/// back through here. winit's user-event channel guarantees
+/// in-order delivery on the event-loop thread.
+#[derive(Debug, Clone)]
+pub enum NavMsg {
+    /// Network navigation completed successfully. Caller (the
+    /// user_event handler) calls `set_page` with the result.
+    Loaded {
+        url: Url,
+        title: String,
+        body: String,
+    },
+    /// Network navigation failed. The error is rendered into the
+    /// page body so the user sees it without needing a terminal.
+    Error {
+        url: Url,
+        error: String,
+    },
+}
 
 #[derive(Debug, Clone)]
 pub struct BrowserConfig {
@@ -67,9 +89,16 @@ pub enum BrowserError {
 /// `?` propagates `EngineError` through `BrowserError` so the
 /// caller sees what's wrong.
 pub fn run(config: BrowserConfig) -> Result<(), BrowserError> {
-    let event_loop = EventLoop::new()
+    // EventLoop carries a NavMsg user-event channel so worker
+    // threads can post navigation results back to the event-loop
+    // thread without taking a lock on WindowState. winit's
+    // EventLoopProxy is the only sanctioned way to wake the
+    // loop from another thread. (Audit bug #11.)
+    let event_loop = EventLoop::<NavMsg>::with_user_event()
+        .build()
         .map_err(|e| BrowserError::EventLoop(format!("create: {e}")))?;
-    let mut app = App::new(config)?;
+    let proxy = event_loop.create_proxy();
+    let mut app = App::new(config, proxy)?;
     event_loop
         .run_app(&mut app)
         .map_err(|e| BrowserError::EventLoop(format!("run: {e}")))?;
@@ -84,6 +113,12 @@ pub fn run(config: BrowserConfig) -> Result<(), BrowserError> {
 struct App {
     config: BrowserConfig,
     state: Option<WindowState>,
+    /// Engine used for SYNCHRONOUS navigations only — internal
+    /// `atsisbroken://` pages, which are pure in-process renders
+    /// with no network I/O. Network navigations happen on a
+    /// worker thread that constructs its own engine; results
+    /// flow back via NavMsg. The engine itself is `!Send`
+    /// (RcDom uses Rc), so it can't be moved across threads.
     engine: Box<dyn Engine>,
     #[allow(dead_code)] // wired in when input layer lands
     timing: InputTiming,
@@ -99,10 +134,17 @@ struct App {
     /// ApplicationHandler is fire-and-forget; we need a side-
     /// channel to surface mid-event-loop errors to `run()`.
     startup_error: Option<BrowserError>,
+    /// Proxy to the event loop. Worker threads use it to post
+    /// NavMsg results back; the event-loop thread receives them
+    /// via `user_event`. (Audit bug #11.)
+    proxy: EventLoopProxy<NavMsg>,
 }
 
 impl App {
-    fn new(config: BrowserConfig) -> Result<Self, BrowserError> {
+    fn new(
+        config: BrowserConfig,
+        proxy: EventLoopProxy<NavMsg>,
+    ) -> Result<Self, BrowserError> {
         let timing = InputTiming::new(config.input.clone());
         let engine: Box<dyn Engine> = Box::new(StaticHtmlEngine::new()?);
         // Build FontSystem here, BEFORE the event loop runs.
@@ -121,11 +163,89 @@ impl App {
             timing,
             font_system: Some(font_system),
             startup_error: None,
+            proxy,
         })
     }
 }
 
-impl ApplicationHandler for App {
+/// Compose `(title, body)` for the page surface from a navigate
+/// + snapshot result pair. Pulled out of the `resumed` closure so
+/// the worker thread can call it from off-thread without
+/// duplicating the formatting logic.
+fn compose_page_text(
+    url: &Url,
+    nav: Result<(), EngineError>,
+    snap: Result<super::engine::PageSnapshot, EngineError>,
+) -> (String, String) {
+    let url_str = url.to_string();
+    match nav {
+        Ok(()) => match snap {
+            Ok(s) => (
+                if s.title.is_empty() { url.host.clone() } else { s.title },
+                s.body,
+            ),
+            Err(_) => (url.host.clone(), String::new()),
+        },
+        Err(e) => (
+            "atsisbroken".to_string(),
+            format!(
+                "Couldn't load {url_str}\n\n{e}\n\nThe rendering engine here is the \
+                 static-HTML scaffold; full HTML/CSS/JS rendering lights up when \
+                 stylo + WebRender + mozjs land in subsequent commits."
+            ),
+        ),
+    }
+}
+
+/// Spawn a worker thread that fetches `url` via a fresh
+/// `StaticHtmlEngine` (the existing one is `!Send`) and posts
+/// the composed result back through `proxy`. Errors are
+/// rendered into the page body the user sees, not just logged.
+fn spawn_navigate(url: Url, proxy: EventLoopProxy<NavMsg>) {
+    thread::spawn(move || {
+        let mut engine = match StaticHtmlEngine::new() {
+            Ok(e) => e,
+            Err(e) => {
+                let _ = proxy.send_event(NavMsg::Error {
+                    url,
+                    error: format!("engine init: {e}"),
+                });
+                return;
+            }
+        };
+        let msg = match engine.navigate(&url) {
+            Ok(_) => match engine.snapshot_fields() {
+                Ok(snap) => {
+                    let title = if snap.title.is_empty() {
+                        url.host.clone()
+                    } else {
+                        snap.title
+                    };
+                    NavMsg::Loaded {
+                        url,
+                        title,
+                        body: snap.body,
+                    }
+                }
+                Err(e) => NavMsg::Error {
+                    url,
+                    error: format!("snapshot: {e}"),
+                },
+            },
+            Err(e) => NavMsg::Error {
+                url,
+                error: e.to_string(),
+            },
+        };
+        // EventLoopProxy::send_event errors only when the event
+        // loop has already exited (user closed the window during
+        // the fetch). In that case the result is irrelevant;
+        // drop it.
+        let _ = proxy.send_event(msg);
+    });
+}
+
+impl ApplicationHandler<NavMsg> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.state.is_some() {
             // winit fires `resumed` again on platforms that
@@ -146,37 +266,59 @@ impl ApplicationHandler for App {
         };
         match WindowState::new(event_loop, &self.config.title, font_system) {
             Ok(mut state) => {
-                let url_str = self.config.start_url.to_string();
-                let (title, body) = match self.engine.navigate(&self.config.start_url) {
-                    Ok(_) => match self.engine.snapshot_fields() {
-                        Ok(snap) => (
-                            if snap.title.is_empty() {
-                                self.config.start_url.host.clone()
-                            } else {
-                                snap.title
-                            },
-                            snap.body,
-                        ),
-                        Err(_) => (
-                            self.config.start_url.host.clone(),
-                            String::new(),
-                        ),
-                    },
-                    Err(e) => (
-                        "atsisbroken".to_string(),
-                        format!(
-                            "Couldn't load {url_str}\n\n{e}\n\nThe rendering engine here is the \
-                             static-HTML scaffold; full HTML/CSS/JS rendering lights up when \
-                             stylo + WebRender + mozjs land in subsequent commits."
-                        ),
-                    ),
-                };
-                state.set_page(url_str, title, body);
+                let url = self.config.start_url.clone();
+                let url_str = url.to_string();
+                if url.is_internal() {
+                    // Internal pages render in-process. Pure
+                    // function call, no network — safe to do
+                    // synchronously inside the event handler.
+                    let nav = self.engine.navigate(&url).map(|_| ());
+                    let snap = self.engine.snapshot_fields();
+                    let (title, body) = compose_page_text(&url, nav, snap);
+                    state.set_page(url_str, title, body);
+                } else {
+                    // Network pages: punt the fetch onto a worker
+                    // thread so the OS event loop is never blocked
+                    // on reqwest::blocking. The placeholder body
+                    // shows immediately; user_event() replaces it
+                    // when the worker returns. (Audit bug #11.)
+                    state.set_page(
+                        url_str.clone(),
+                        url.host.clone(),
+                        format!("Loading {url_str}…"),
+                    );
+                    spawn_navigate(url, self.proxy.clone());
+                }
                 self.state = Some(state);
             }
             Err(e) => {
                 self.startup_error = Some(BrowserError::Other(e));
                 event_loop.exit();
+            }
+        }
+    }
+
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: NavMsg) {
+        // Worker-thread navigations report back here. If the
+        // window was closed in flight (state already None) the
+        // result is irrelevant.
+        let Some(state) = self.state.as_mut() else { return };
+        match event {
+            NavMsg::Loaded { url, title, body } => {
+                state.set_page(url.to_string(), title, body);
+            }
+            NavMsg::Error { url, error } => {
+                let url_str = url.to_string();
+                state.set_page(
+                    url_str.clone(),
+                    "atsisbroken".to_string(),
+                    format!(
+                        "Couldn't load {url_str}\n\n{error}\n\nThe rendering engine \
+                         here is the static-HTML scaffold; full HTML/CSS/JS rendering \
+                         lights up when stylo + WebRender + mozjs land in subsequent \
+                         commits."
+                    ),
+                );
             }
         }
     }
@@ -257,5 +399,79 @@ mod tests {
         // surfaces here.
         let c = BrowserConfig::default();
         assert!(!c.fingerprint.navigator_webdriver);
+    }
+
+    // ─── compose_page_text ───────────────────────────────────────────────
+
+    use super::compose_page_text;
+    use super::super::engine::PageSnapshot;
+
+    fn url_for_test(s: &str) -> Url {
+        s.parse().expect("test URL must parse")
+    }
+
+    #[test]
+    fn compose_page_text_uses_snapshot_title_when_present() {
+        let url = url_for_test("https://example.com/");
+        let snap = PageSnapshot {
+            url: url.to_string(),
+            title: "Example Domain".into(),
+            body: "This domain is for use in illustrative examples.".into(),
+            fields: Vec::new(),
+        };
+        let (title, body) = compose_page_text(&url, Ok(()), Ok(snap));
+        assert_eq!(title, "Example Domain");
+        assert!(body.contains("illustrative"));
+    }
+
+    #[test]
+    fn compose_page_text_falls_back_to_host_when_title_empty() {
+        // Network pages without a <title> tag use the URL host as
+        // the title — matches the address-bar idiom of "you're at
+        // example.com" when the page hasn't named itself.
+        let url = url_for_test("https://example.com/");
+        let snap = PageSnapshot {
+            url: url.to_string(),
+            title: String::new(),
+            body: "body text".into(),
+            fields: Vec::new(),
+        };
+        let (title, body) = compose_page_text(&url, Ok(()), Ok(snap));
+        assert_eq!(title, "example.com");
+        assert_eq!(body, "body text");
+    }
+
+    #[test]
+    fn compose_page_text_renders_navigate_error_into_body() {
+        // Failed navigation renders the error inline so the user
+        // sees it in the window — not just on stderr.
+        let url = url_for_test("https://example.com/");
+        let nav_err = Err(EngineError::Network("dns: no route to host".into()));
+        let snap_err = Err(EngineError::Parse("no page loaded".into()));
+        let (title, body) = compose_page_text(&url, nav_err, snap_err);
+        assert_eq!(title, "atsisbroken");
+        assert!(body.contains("Couldn't load"));
+        assert!(body.contains("https://example.com/"));
+        assert!(body.contains("dns: no route to host"));
+    }
+
+    // ─── Url routing dispatch ────────────────────────────────────────────
+
+    #[test]
+    fn internal_url_takes_synchronous_path() {
+        // The dispatch in `resumed` keys off `is_internal()`. Pin
+        // the predicate so a URL refactor doesn't silently route
+        // an internal page through the network worker (which
+        // would still work, but would be wasteful + confusing).
+        let url = url_for_test("atsisbroken://home");
+        assert!(url.is_internal());
+        assert!(!url.is_network());
+    }
+
+    #[test]
+    fn network_url_takes_async_worker_path() {
+        let url = url_for_test("https://boards.greenhouse.io/example/jobs/123");
+        assert!(!url.is_internal());
+        assert!(url.is_network());
     }
 }
