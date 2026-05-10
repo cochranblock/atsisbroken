@@ -4,27 +4,34 @@
 //! Single canonical resolver so the rest of the code never duplicates
 //! `~/.atsisbroken/...` strings. Every path is per-user, never world-
 //! readable by default.
+//!
+//! ## Two flavors per path
+//!
+//! Most callers want the canonical path under the *real* user's
+//! home directory and use the bare functions (`atsisbroken_dir()`,
+//! `profile_path()`, etc.) which read `$HOME` from the process
+//! environment. The cli_smoke tests in [`crate::tests::cli_smoke`]
+//! redirect every path under a `tempdir` per-test by passing an
+//! explicit home into the `_with_home` variants. The bare
+//! functions are wrappers around the explicit ones.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+// ─── canonical (read $HOME from process env) ──────────────────────────
 
 /// `~/.atsisbroken/`. Created on demand by [`ensure_dir`].
 pub fn atsisbroken_dir() -> PathBuf {
-    let mut p = home_dir();
-    p.push(".atsisbroken");
-    p
+    atsisbroken_dir_with_home(&home_dir())
 }
 
 pub fn profile_path() -> PathBuf {
-    let mut p = atsisbroken_dir();
-    p.push("profile.toml");
-    p
+    profile_path_with_home(&home_dir())
 }
 
 /// If `override_path` is `Some`, use that path as the profile location
 /// (the `--profile` CLI flag). Otherwise fall back to the canonical
-/// `~/.atsisbroken/profile.toml`. Lets a user (e.g. P4 career counselor)
-/// keep multiple profiles side by side without env-var juggling.
-pub fn profile_path_with_override(override_path: Option<&std::path::Path>) -> PathBuf {
+/// `~/.atsisbroken/profile.toml`.
+pub fn profile_path_with_override(override_path: Option<&Path>) -> PathBuf {
     match override_path {
         Some(p) => p.to_path_buf(),
         None => profile_path(),
@@ -32,64 +39,105 @@ pub fn profile_path_with_override(override_path: Option<&std::path::Path>) -> Pa
 }
 
 pub fn config_path() -> PathBuf {
-    let mut p = atsisbroken_dir();
-    p.push("config.toml");
-    p
+    config_path_with_home(&home_dir())
 }
 
 pub fn feedback_jsonl_path() -> PathBuf {
-    let mut p = atsisbroken_dir();
-    p.push("feedback.jsonl");
-    p
+    feedback_jsonl_path_with_home(&home_dir())
 }
 
 pub fn model_path() -> PathBuf {
-    let mut p = atsisbroken_dir();
-    p.push("model.json");
-    p
+    model_path_with_home(&home_dir())
 }
 
 /// `~/.atsisbroken/github_inventory.json` — Phase I sync output.
-/// Public-repo metadata + README excerpts + recent commit messages.
-/// Never ships the user's source code, only structural metadata.
 pub fn github_inventory_path() -> PathBuf {
-    let mut p = atsisbroken_dir();
-    p.push("github_inventory.json");
-    p
+    github_inventory_path_with_home(&home_dir())
 }
 
 /// `~/.atsisbroken/github_token` — Phase I auth.
-/// Plain-text token file, chmod 600 on Unix, owner-only on Windows
-/// via best-effort ACL. Never logged, never crosses the Native
-/// Messaging bridge, never appears in any TUI tab. The token is
-/// optional; without it sync is rate-limited at 60 req/h.
 pub fn github_token_path() -> PathBuf {
-    let mut p = atsisbroken_dir();
-    p.push("github_token");
-    p
+    github_token_path_with_home(&home_dir())
 }
 
-/// Per-Chrome-family Native Messaging host manifest target. Returns the
-/// directory the host JSON belongs in, per OS. None ⇒ unsupported on this
-/// platform (Windows uses the registry; not implemented yet).
+/// Per-Chrome-family Native Messaging host manifest target.
 pub fn chrome_native_host_dir() -> Option<PathBuf> {
-    let mut p = home_dir();
+    chrome_native_host_dir_with_home(&home_dir())
+}
+
+/// Create `~/.atsisbroken/` if it doesn't exist.
+pub fn ensure_dir() -> std::io::Result<PathBuf> {
+    ensure_dir_with_home(&home_dir())
+}
+
+// ─── explicit-home variants (used by cli_smoke + any caller that
+//     needs a non-real-user home, like a tempdir) ──────────────────────
+
+pub fn atsisbroken_dir_with_home(home: &Path) -> PathBuf {
+    home.join(".atsisbroken")
+}
+
+pub fn profile_path_with_home(home: &Path) -> PathBuf {
+    atsisbroken_dir_with_home(home).join("profile.toml")
+}
+
+pub fn profile_path_with_override_and_home(
+    override_path: Option<&Path>,
+    home: &Path,
+) -> PathBuf {
+    match override_path {
+        Some(p) => p.to_path_buf(),
+        None => profile_path_with_home(home),
+    }
+}
+
+pub fn config_path_with_home(home: &Path) -> PathBuf {
+    atsisbroken_dir_with_home(home).join("config.toml")
+}
+
+pub fn feedback_jsonl_path_with_home(home: &Path) -> PathBuf {
+    atsisbroken_dir_with_home(home).join("feedback.jsonl")
+}
+
+pub fn model_path_with_home(home: &Path) -> PathBuf {
+    atsisbroken_dir_with_home(home).join("model.json")
+}
+
+pub fn github_inventory_path_with_home(home: &Path) -> PathBuf {
+    atsisbroken_dir_with_home(home).join("github_inventory.json")
+}
+
+pub fn github_token_path_with_home(home: &Path) -> PathBuf {
+    atsisbroken_dir_with_home(home).join("github_token")
+}
+
+pub fn chrome_native_host_dir_with_home(home: &Path) -> Option<PathBuf> {
     if cfg!(target_os = "macos") {
-        p.push("Library");
-        p.push("Application Support");
-        p.push("Google");
-        p.push("Chrome");
-        p.push("NativeMessagingHosts");
-        Some(p)
+        Some(
+            home.join("Library")
+                .join("Application Support")
+                .join("Google")
+                .join("Chrome")
+                .join("NativeMessagingHosts"),
+        )
     } else if cfg!(target_os = "linux") {
-        p.push(".config");
-        p.push("google-chrome");
-        p.push("NativeMessagingHosts");
-        Some(p)
+        Some(
+            home.join(".config")
+                .join("google-chrome")
+                .join("NativeMessagingHosts"),
+        )
     } else {
         None
     }
 }
+
+pub fn ensure_dir_with_home(home: &Path) -> std::io::Result<PathBuf> {
+    let dir = atsisbroken_dir_with_home(home);
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+// ─── helpers ──────────────────────────────────────────────────────────
 
 fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
@@ -97,11 +145,3 @@ fn home_dir() -> PathBuf {
         .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from("."))
 }
-
-/// Create `~/.atsisbroken/` if it doesn't exist.
-pub fn ensure_dir() -> std::io::Result<PathBuf> {
-    let dir = atsisbroken_dir();
-    std::fs::create_dir_all(&dir)?;
-    Ok(dir)
-}
-

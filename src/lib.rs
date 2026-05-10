@@ -39,6 +39,7 @@ pub mod bridge;
 pub mod browser;
 pub mod browser_detect;
 pub mod cdp;
+pub mod cli;
 pub mod config;
 pub mod github;
 pub mod learning;

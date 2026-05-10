@@ -56,6 +56,7 @@ use std::time::Instant;
 pub mod bridge;
 pub mod browser_detect;
 pub mod cdp;
+pub mod cli_smoke;
 pub mod config;
 pub mod connector;
 pub mod engine;
@@ -287,6 +288,7 @@ pub fn run_all() -> Vec<TestResult> {
     all.extend(bridge::run());
     all.extend(browser_detect::run());
     all.extend(cdp::run());
+    all.extend(cli_smoke::run_tests());
     all.extend(config::run());
     all.extend(connector::run());
     all.extend(engine::run());
