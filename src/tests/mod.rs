@@ -74,6 +74,7 @@ pub mod strategy;
 pub mod text;
 #[cfg(feature = "tui")]
 pub mod tui;
+pub mod url;
 pub mod window;
 
 /// Result of running one test. The TRIPLE SIMS gate hashes a
@@ -304,6 +305,7 @@ pub fn run_all() -> Vec<TestResult> {
     all.extend(text::run());
     #[cfg(feature = "tui")]
     all.extend(tui::run());
+    all.extend(url::run());
     all.extend(window::run());
     all
 }
@@ -319,4 +321,114 @@ pub fn run_all_and_print() -> (Vec<TestResult>, bool) {
     let passed = results.iter().filter(|r| r.passed).count();
     eprintln!("\n{passed}/{total} tests passed");
     (results, passed == total)
+}
+
+/// Deterministic 64-bit PRNG (splitmix64). Seeded once per fuzz
+/// call; the resulting stream is reproducible across machines and
+/// runs. Hand-rolled so the tests tree doesn't depend on `rand`.
+/// Algorithm: Sebastiano Vigna's splitmix64, public domain.
+pub struct Rng {
+    state: u64,
+}
+
+impl Rng {
+    pub fn new(seed: u64) -> Self {
+        Self { state: seed }
+    }
+
+    pub fn next_u64(&mut self) -> u64 {
+        self.state = self.state.wrapping_add(0x9E3779B97F4A7C15);
+        let mut z = self.state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+        z ^ (z >> 31)
+    }
+
+    pub fn range(&mut self, lo: u64, hi: u64) -> u64 {
+        // Inclusive on lo, exclusive on hi. Uniform-ish; good
+        // enough for fuzz inputs.
+        if hi <= lo {
+            return lo;
+        }
+        lo + self.next_u64() % (hi - lo)
+    }
+
+    /// Generate a Vec<u8> of length up to `max_len`.
+    pub fn bytes(&mut self, max_len: usize) -> Vec<u8> {
+        let len = self.range(0, max_len as u64 + 1) as usize;
+        (0..len).map(|_| (self.next_u64() & 0xFF) as u8).collect()
+    }
+
+    /// Generate an ASCII string from `[0x20..=0x7E]` (printable
+    /// ASCII; excludes control chars). Length up to `max_len`.
+    pub fn printable_ascii(&mut self, max_len: usize) -> String {
+        let len = self.range(0, max_len as u64 + 1) as usize;
+        (0..len)
+            .map(|_| {
+                let c = (self.range(0x20, 0x7F)) as u8;
+                c as char
+            })
+            .collect()
+    }
+
+    /// Generate a lowercase-ASCII string of length in `[min, max]`.
+    pub fn lower_ascii(&mut self, min: usize, max: usize) -> String {
+        let len = self.range(min as u64, max as u64 + 1) as usize;
+        (0..len)
+            .map(|_| (b'a' + (self.next_u64() % 26) as u8) as char)
+            .collect()
+    }
+}
+
+/// Hand-rolled property runner. Runs `body` over `cases` random
+/// inputs from `make`. Collapses every failure into a single
+/// TestResult body; the caller wraps with [`case`] like any other
+/// test. Determinism is by `seed` — two runs with the same seed
+/// produce the same input stream and the same pass/fail outcome.
+///
+/// The replacement for proptest. Doesn't shrink failing cases;
+/// the test name + the captured input value carry enough signal
+/// to debug a failure manually.
+///
+/// (Generator parameter is named `make`, not `gen` — `gen` is a
+/// reserved keyword in Rust 2024.)
+///
+/// ```ignore
+/// fn url_parser_does_not_panic_on_random_ascii() -> Result<(), String> {
+///     fuzz(0xC0FFEE, 500, |rng| rng.printable_ascii(128), |s| {
+///         let _ = s.parse::<Url>();
+///         Ok(())
+///     })
+/// }
+/// ```
+pub fn fuzz<T: std::fmt::Debug>(
+    seed: u64,
+    cases: usize,
+    mut make: impl FnMut(&mut Rng) -> T,
+    mut body: impl FnMut(&T) -> Result<(), String>,
+) -> Result<(), String> {
+    let mut rng = Rng::new(seed);
+    for i in 0..cases {
+        let input = make(&mut rng);
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| body(&input)));
+        match outcome {
+            Ok(Ok(())) => continue,
+            Ok(Err(msg)) => {
+                return Err(format!("fuzz case {i} (seed {seed}): {msg}\n  input: {input:?}"));
+            }
+            Err(panic_payload) => {
+                let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                    (*s).to_string()
+                } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "<panic with non-string payload>".to_string()
+                };
+                return Err(format!(
+                    "fuzz case {i} (seed {seed}) PANICKED: {msg}\n  input: {input:?}"
+                ));
+            }
+        }
+    }
+    Ok(())
 }

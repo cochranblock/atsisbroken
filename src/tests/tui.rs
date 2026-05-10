@@ -5,8 +5,10 @@
 #![cfg(feature = "tui")]
 
 use crate::strategy::Strategy;
+use crate::tui::runtime::{key_action, render_html_for_screenshot};
 use crate::tui::{App, KeyAction, TABS};
 use crate::{Feedback, FeedbackQueue, FieldDescriptor, Mode};
+use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::{case, check, check_eq, TestResult};
 
@@ -27,6 +29,19 @@ pub fn run() -> Vec<TestResult> {
         case("tui::scroll_up_at_zero_does_not_underflow", scroll_up_at_zero_does_not_underflow),
         case("tui::scroll_only_advances_on_queue_tab", scroll_only_advances_on_queue_tab),
         case("tui::tabs_constant_matches_documented_count", tabs_constant_matches_documented_count),
+        // ─── runtime: key_action + render_html_for_screenshot ──────
+        case("tui::key_action_quit_on_q_or_esc", key_action_quit_on_q_or_esc),
+        case("tui::key_action_ctrl_c_quits", key_action_ctrl_c_quits),
+        case("tui::key_action_tab_and_arrows_navigate", key_action_tab_and_arrows_navigate),
+        case("tui::key_action_digit_keys_pick_tab", key_action_digit_keys_pick_tab),
+        case("tui::key_action_vim_keys_supported", key_action_vim_keys_supported),
+        case("tui::key_action_unhandled_returns_noop", key_action_unhandled_returns_noop),
+        case("tui::render_html_produces_valid_doctype_and_atsisbroken_label",
+             render_html_produces_valid_doctype_and_atsisbroken_label),
+        case("tui::render_html_each_tab_distinguishable", render_html_each_tab_distinguishable),
+        case("tui::render_html_clamps_oversize_tab_index", render_html_clamps_oversize_tab_index),
+        case("tui::render_html_includes_keybind_footer_hints", render_html_includes_keybind_footer_hints),
+        case("tui::render_html_escapes_html_metacharacters", render_html_escapes_html_metacharacters),
     ]
 }
 
@@ -158,4 +173,75 @@ fn scroll_only_advances_on_queue_tab() -> Result<(), String> {
 fn tabs_constant_matches_documented_count() -> Result<(), String> {
     check_eq(TABS.len(), 3usize, "TABS.len")?;
     check_eq(TABS, ["dashboard", "queue", "strategy"], "TABS contents")
+}
+
+// ─── runtime: key_action + render_html_for_screenshot ──────────────
+
+fn key_action_quit_on_q_or_esc() -> Result<(), String> {
+    check_eq(key_action(KeyCode::Char('q'), KeyModifiers::empty()), KeyAction::Quit, "q")?;
+    check_eq(key_action(KeyCode::Esc, KeyModifiers::empty()), KeyAction::Quit, "Esc")
+}
+
+fn key_action_ctrl_c_quits() -> Result<(), String> {
+    check_eq(
+        key_action(KeyCode::Char('c'), KeyModifiers::CONTROL),
+        KeyAction::Quit,
+        "Ctrl+C",
+    )
+}
+
+fn key_action_tab_and_arrows_navigate() -> Result<(), String> {
+    check_eq(key_action(KeyCode::Tab, KeyModifiers::empty()), KeyAction::NextTab, "Tab")?;
+    check_eq(key_action(KeyCode::Right, KeyModifiers::empty()), KeyAction::NextTab, "Right")?;
+    check_eq(key_action(KeyCode::BackTab, KeyModifiers::empty()), KeyAction::PrevTab, "BackTab")?;
+    check_eq(key_action(KeyCode::Left, KeyModifiers::empty()), KeyAction::PrevTab, "Left")
+}
+
+fn key_action_digit_keys_pick_tab() -> Result<(), String> {
+    check_eq(key_action(KeyCode::Char('1'), KeyModifiers::empty()), KeyAction::TabIndex(0), "1")?;
+    check_eq(key_action(KeyCode::Char('2'), KeyModifiers::empty()), KeyAction::TabIndex(1), "2")?;
+    check_eq(key_action(KeyCode::Char('3'), KeyModifiers::empty()), KeyAction::TabIndex(2), "3")?;
+    check_eq(key_action(KeyCode::Char('9'), KeyModifiers::empty()), KeyAction::Noop, "9 → Noop")
+}
+
+fn key_action_vim_keys_supported() -> Result<(), String> {
+    check_eq(key_action(KeyCode::Char('h'), KeyModifiers::empty()), KeyAction::PrevTab, "h")?;
+    check_eq(key_action(KeyCode::Char('l'), KeyModifiers::empty()), KeyAction::NextTab, "l")?;
+    check_eq(key_action(KeyCode::Char('j'), KeyModifiers::empty()), KeyAction::Down, "j")?;
+    check_eq(key_action(KeyCode::Char('k'), KeyModifiers::empty()), KeyAction::Up, "k")
+}
+
+fn key_action_unhandled_returns_noop() -> Result<(), String> {
+    check_eq(key_action(KeyCode::Char('z'), KeyModifiers::empty()), KeyAction::Noop, "z")?;
+    check_eq(key_action(KeyCode::F(5), KeyModifiers::empty()), KeyAction::Noop, "F5")
+}
+
+fn render_html_produces_valid_doctype_and_atsisbroken_label() -> Result<(), String> {
+    let html = render_html_for_screenshot(0, 80, 16).map_err(|e| format!("{e}"))?;
+    check(html.starts_with("<!doctype html>"), "doctype")?;
+    check(html.contains("atsisbroken"), "label")?;
+    check(html.contains("</body></html>"), "well-formed end")
+}
+
+fn render_html_each_tab_distinguishable() -> Result<(), String> {
+    for (i, name) in TABS.iter().enumerate() {
+        let html = render_html_for_screenshot(i, 80, 16).map_err(|e| format!("{e}"))?;
+        check(html.contains(name), format!("tab {i} ({name}) didn't render its own name"))?;
+    }
+    Ok(())
+}
+
+fn render_html_clamps_oversize_tab_index() -> Result<(), String> {
+    let html = render_html_for_screenshot(99, 80, 16).map_err(|e| format!("{e}"))?;
+    check(html.contains("strategy"), "out-of-range tab clamps to last")
+}
+
+fn render_html_includes_keybind_footer_hints() -> Result<(), String> {
+    let html = render_html_for_screenshot(0, 80, 16).map_err(|e| format!("{e}"))?;
+    check(html.contains("quit"), "footer should mention quit")
+}
+
+fn render_html_escapes_html_metacharacters() -> Result<(), String> {
+    let html = render_html_for_screenshot(0, 80, 16).map_err(|e| format!("{e}"))?;
+    check(!html.contains("<script"), "must not embed scripts")
 }

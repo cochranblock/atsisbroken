@@ -148,15 +148,15 @@ exopack            = { version = "0.2", git = "https://github.com/cochranblock/e
 blake3             = { version = "1", optional = true }
 
 [dev-dependencies]
-# Snapshot testing for internal-page text bodies. Each page's output
-# is a fixture file under src/browser/snapshots/; CI fails when a
-# page's text drifts unexpectedly. Running `cargo insta accept`
-# bumps the fixtures.
-insta              = "1.43"
-# Property-based fuzzing for the URL parser. Generates random byte
-# sequences and asserts the parser doesn't panic, doesn't loop, and
-# round-trips valid input.
-proptest           = "1.7"
+# Empty after the cochranblock-exopack migration. Snapshot
+# testing was insta — replaced by `tests::check_snapshot` which
+# reads the same .snap files directly. Property-based fuzzing
+# was proptest — replaced by `tests::fuzz` + a hand-rolled
+# splitmix64 PRNG (seeded for determinism). Both replacements
+# live in `src/tests/mod.rs`. tests/cli_smoke.rs is the only
+# remaining cargo-test consumer; it spawns the production
+# binary as a subprocess and asserts on stdout — no test-only
+# crate dependencies needed.
 
 
 
