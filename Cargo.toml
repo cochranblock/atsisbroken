@@ -29,6 +29,7 @@ description = "ATS is broken. Browser autopilot that fills job applications usin
 license = "Unlicense"
 repository = "https://github.com/cochranblock/atsisbroken"
 homepage = "https://simplify.cochranblock.org"
+documentation = "https://cochranblock.github.io/atsisbroken/"
 readme = "README.md"
 keywords = ["ats", "job-application", "autofill", "resume", "local-first"]
 categories = ["command-line-utilities"]
